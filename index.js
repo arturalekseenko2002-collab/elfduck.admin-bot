@@ -211,21 +211,90 @@ const askStep = async (ctx) => {
   const st = getState(ctx.chat.id);
   const step = BUILDER_STEPS[st.step];
 
+    const prompts = {
+        key: "Введите key категории (латиница/цифры/дефис), пример: liquids или disposables",
+        title: "Введите title (как на карточке), пример: ЖИДКОСТИ",
+        badgeText: "Введите badgeText (например NEW DROP) или отправьте - чтобы оставить пустым",
+        showOverlay: "Нужно ли затемнение (overlay)?",
+        classCardDuck: "Выберите позицию/класс утки (classCardDuck):",
+        titleClass: "Выберите стиль заголовка (titleClass):",
+        cardBgUrl: "Вставьте cardBgUrl (Pinata URL) или - чтобы пропустить",
+        cardDuckUrl: "Вставьте cardDuckUrl (Pinata URL) или - чтобы пропустить",
+        sortOrder: "Введите sortOrder (число: 0,1,2...) — порядок в сетке",
+        isActive: "Категория активна?",
+        confirmCreate: "Подтвердить создание категории?",
+        confirmEdit: "Подтвердить обновление категории?",
+    };
+
+    let extraKb = null;
+
+    if (step === "showOverlay") {
+        extraKb = Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Да", "cat_builder_set_showOverlay:true")],
+        [Markup.button.callback("❌ Нет", "cat_builder_set_showOverlay:false")],
+        ]);
+    }
+
+    if (step === "classCardDuck") {
+        extraKb = Markup.inlineKeyboard(
+        DUCK_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_classCardDuck:${c}`)])
+        );
+    }
+
+    if (step === "titleClass") {
+        extraKb = Markup.inlineKeyboard(
+        TITLE_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_titleClass:${c}`)])
+        );
+    }
+
+    if (step === "isActive") {
+        extraKb = Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Включить", "cat_builder_set_isActive:true")],
+        [Markup.button.callback("⛔️ Выключить", "cat_builder_set_isActive:false")],
+        ]);
+    }
+
+    if (step === "confirm") {
+        const isEdit = st?.mode === "cat_edit";
+        extraKb = Markup.inlineKeyboard([
+        [
+            Markup.button.callback(
+            isEdit ? "💾 Сохранить" : "✅ Создать",
+            isEdit ? "cat_edit_confirm" : "cat_builder_confirm"
+            ),
+        ],
+        ]);
+    }
+
 
     // show preview each time (reuse one message)
-    const previewText = renderCategoryPreview(st.data).replace(/[-.()]/g, "\\$&");
-    const previewKb = builderNavKeyboard(st.step);
+    let kb = builderNavKeyboard(st.step);
+    if (extraKb) {
+        const nav = kb.reply_markup.inline_keyboard;
+        const extra = extraKb.reply_markup.inline_keyboard;
+        kb = Markup.inlineKeyboard([...extra, ...nav]);
+    }
+
+    const promptLine =
+        step === "confirm"
+        ? (st?.mode === "cat_edit" ? prompts.confirmEdit : prompts.confirmCreate)
+        : (prompts[step] || "");
+
+    const screenText = (renderCategoryPreview(st.data) + "\n\n" + promptLine).replace(
+        /[-.()]/g,
+        "\\$&"
+    );
 
     // try edit existing preview
     if (st.previewMsgId) {
     try {
-        await ctx.telegram.editMessageText(
+    await ctx.telegram.editMessageText(
         ctx.chat.id,
         st.previewMsgId,
         undefined,
-        previewText,
-        { parse_mode: "MarkdownV2", ...previewKb }
-        );
+        screenText,
+        { parse_mode: "MarkdownV2", ...kb }
+    );
     } catch {
         st.previewMsgId = null;
     }
@@ -238,94 +307,7 @@ const askStep = async (ctx) => {
     setState(ctx.chat.id, st);
     }
 
-  if (step === "key") {
-    return ctx.reply(
-      "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`",
-      { parse_mode: "Markdown" }
-    );
-  }
 
-  if (step === "title") {
-    return ctx.reply("Введите *title* (как на карточке), пример: `ЖИДКОСТИ`", { parse_mode: "Markdown" });
-  }
-
-  if (step === "badgeText") {
-    return ctx.reply("Введите *badgeText* (например `NEW DROP`) или отправьте `-` чтобы оставить пустым", {
-      parse_mode: "Markdown",
-    });
-  }
-
-  if (step === "showOverlay") {
-    return ctx.reply(
-      "Нужно ли затемнение (overlay)?",
-      Markup.inlineKeyboard([
-        [Markup.button.callback("✅ Да", "cat_builder_set_showOverlay:true")],
-        [Markup.button.callback("❌ Нет", "cat_builder_set_showOverlay:false")],
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
-  }
-
-  if (step === "classCardDuck") {
-    return ctx.reply(
-      "Выберите позицию/класс утки (classCardDuck):",
-      Markup.inlineKeyboard([
-        ...DUCK_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_classCardDuck:${c}`)]),
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
-  }
-
-  if (step === "titleClass") {
-    return ctx.reply(
-      "Выберите стиль заголовка (titleClass):",
-      Markup.inlineKeyboard([
-        ...TITLE_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_titleClass:${c}`)]),
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
-  }
-
-  if (step === "cardBgUrl") {
-    return ctx.reply("Вставьте *cardBgUrl* (Pinata URL) или `-` чтобы пропустить", { parse_mode: "Markdown" });
-  }
-
-  if (step === "cardDuckUrl") {
-    return ctx.reply("Вставьте *cardDuckUrl* (Pinata URL) или `-` чтобы пропустить", { parse_mode: "Markdown" });
-  }
-
-  if (step === "sortOrder") {
-    return ctx.reply("Введите *sortOrder* (число: 0,1,2...) — порядок в сетке", { parse_mode: "Markdown" });
-  }
-
-  if (step === "isActive") {
-    return ctx.reply(
-      "Категория активна?",
-      Markup.inlineKeyboard([
-        [Markup.button.callback("✅ Включить", "cat_builder_set_isActive:true")],
-        [Markup.button.callback("⛔️ Выключить", "cat_builder_set_isActive:false")],
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
-  }
-
-    if (step === "confirm") {
-    const st = getState(ctx.chat.id);
-    const isEdit = st?.mode === "cat_edit";
-
-    return ctx.reply(
-        isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?",
-        Markup.inlineKeyboard([
-        [
-            Markup.button.callback(
-            isEdit ? "💾 Сохранить" : "✅ Создать",
-            isEdit ? "cat_edit_confirm" : "cat_builder_confirm"
-            ),
-        ],
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-        ])
-    );
-    }
 };
 
 const nextStep = async (ctx) => {
@@ -910,6 +892,7 @@ bot.on("text", async (ctx) => {
     }
     st.data.key = text;
     setState(ctx.chat.id, st);
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id); } catch {}
     return nextStep(ctx);
   }
 
@@ -918,6 +901,7 @@ bot.on("text", async (ctx) => {
     if (text.length < 2) return ctx.reply("❌ Слишком короткий title");
     st.data.title = text;
     setState(ctx.chat.id, st);
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id); } catch {}
     return nextStep(ctx);
   }
 
@@ -925,6 +909,7 @@ bot.on("text", async (ctx) => {
   if (step === "badgeText") {
     st.data.badgeText = text === "-" ? "" : text;
     setState(ctx.chat.id, st);
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id); } catch {}
     return nextStep(ctx);
   }
 
@@ -933,6 +918,7 @@ bot.on("text", async (ctx) => {
     if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
     st.data.cardBgUrl = text === "-" ? "" : text;
     setState(ctx.chat.id, st);
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id); } catch {}
     return nextStep(ctx);
   }
 
@@ -941,6 +927,7 @@ bot.on("text", async (ctx) => {
     if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
     st.data.cardDuckUrl = text === "-" ? "" : text;
     setState(ctx.chat.id, st);
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id); } catch {}
     return nextStep(ctx);
   }
 
@@ -950,6 +937,7 @@ bot.on("text", async (ctx) => {
     if (Number.isNaN(n)) return ctx.reply("❌ sortOrder должен быть числом (0,1,2...)");
     st.data.sortOrder = n;
     setState(ctx.chat.id, st);
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, ctx.message.message_id); } catch {}
     return nextStep(ctx);
   }
 });
