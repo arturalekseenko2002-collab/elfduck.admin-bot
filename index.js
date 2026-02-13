@@ -374,7 +374,7 @@ bot.action(/cat_builder_set_showOverlay:(true|false)/, async (ctx) => {
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
-  if (!st || st.mode !== "cat_builder") return;
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   st.data.showOverlay = ctx.match[1] === "true";
   setState(ctx.chat.id, st);
@@ -386,7 +386,7 @@ bot.action(/cat_builder_set_classCardDuck:(.+)/, async (ctx) => {
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
-  if (!st || st.mode !== "cat_builder") return;
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   const val = ctx.match[1];
   st.data.classCardDuck = DUCK_CLASSES.includes(val) ? val : "cardImageLeft";
@@ -399,7 +399,7 @@ bot.action(/cat_builder_set_titleClass:(.+)/, async (ctx) => {
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
-  if (!st || st.mode !== "cat_builder") return;
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   const val = ctx.match[1];
   st.data.titleClass = TITLE_CLASSES.includes(val) ? val : "cardTitle";
@@ -412,7 +412,7 @@ bot.action(/cat_builder_set_isActive:(true|false)/, async (ctx) => {
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
-  if (!st || st.mode !== "cat_builder") return;
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   st.data.isActive = ctx.match[1] === "true";
   setState(ctx.chat.id, st);
