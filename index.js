@@ -476,7 +476,7 @@ bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
 
   const st = getState(ctx.chat.id);
-  if (!st || st.mode !== "cat_builder") return;
+    if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   const step = BUILDER_STEPS[st.step];
   const text = String(ctx.message.text || "").trim();
