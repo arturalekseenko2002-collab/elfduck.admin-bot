@@ -51,6 +51,7 @@ const isValidUrl = (s) => /^https?:\/\/\S+$/i.test(s);
 const mainMenu = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback("➕ Создать категорию (конструктор)", "cat_builder_start")],
+    [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
   ]);
 
@@ -213,15 +214,23 @@ const askStep = async (ctx) => {
     );
   }
 
-  if (step === "confirm") {
+    if (step === "confirm") {
+    const st = getState(ctx.chat.id);
+    const isEdit = st?.mode === "cat_edit";
+
     return ctx.reply(
-      "Подтвердить создание категории?",
-      Markup.inlineKeyboard([
-        [Markup.button.callback("✅ Создать", "cat_builder_confirm")],
+        isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?",
+        Markup.inlineKeyboard([
+        [
+            Markup.button.callback(
+            isEdit ? "💾 Сохранить" : "✅ Создать",
+            isEdit ? "cat_edit_confirm" : "cat_builder_confirm"
+            ),
+        ],
         [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
+        ])
     );
-  }
+    }
 };
 
 const nextStep = async (ctx) => {
@@ -238,6 +247,69 @@ bot.start(async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔️ Нет доступа");
   clearState(ctx.chat.id);
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu());
+});
+
+// ==================== CATEGORY EDIT ===================
+
+bot.action("cat_edit_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  try {
+    const r = await fetch(`${API_URL}/categories?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const categories = Array.isArray(data) ? data : data.categories || [];
+
+    if (!categories.length) return ctx.reply("Категорий пока нет", mainMenu());
+
+    return ctx.reply(
+      "Выберите категорию для редактирования:",
+      Markup.inlineKeyboard(
+        categories.map((c) => [
+          Markup.button.callback(
+            `${c.isActive ? "✅" : "⛔️"} ${c.title}`,
+            `cat_edit_pick:${c._id}`
+          ),
+        ])
+      )
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action(/cat_edit_pick:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = ctx.match[1];
+
+  const r = await fetch(`${API_URL}/categories?active=0`);
+  const data = await r.json().catch(() => ({}));
+  const categories = Array.isArray(data) ? data : data.categories || [];
+  const cat = categories.find((c) => String(c._id) === String(id));
+
+  if (!cat) return ctx.reply("Категория не найдена", mainMenu());
+
+  setState(ctx.chat.id, {
+    mode: "cat_edit",
+    step: 0,
+    editId: id,
+    data: {
+      key: cat.key || "",
+      title: cat.title || "",
+      badgeText: cat.badgeText || "",
+      showOverlay: !!cat.showOverlay,
+      classCardDuck: cat.classCardDuck || "cardImageLeft",
+      titleClass: cat.titleClass || "cardTitle",
+      cardBgUrl: cat.cardBgUrl || "",
+      cardDuckUrl: cat.cardDuckUrl || "",
+      sortOrder: cat.sortOrder || 0,
+      isActive: cat.isActive !== false,
+    },
+  });
+
+  return askStep(ctx);
 });
 
 // =====================================================
@@ -289,7 +361,7 @@ bot.action("cat_builder_back", async (ctx) => {
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
-  if (!st || st.mode !== "cat_builder") return;
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   st.step = Math.max(0, st.step - 1);
   setState(ctx.chat.id, st);
@@ -366,6 +438,32 @@ bot.action("cat_builder_confirm", async (ctx) => {
     clearState(ctx.chat.id);
     return ctx.reply(
       `✅ Категория создана:\n${created.category.title} (${created.category.key})`,
+      mainMenu()
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action("cat_edit_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit") return;
+
+  try {
+    const payload = { ...st.data };
+
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      `✅ Категория обновлена:\n${updated.category.title} (${updated.category.key})`,
       mainMenu()
     );
   } catch (e) {
