@@ -150,35 +150,52 @@ const editMenuKeyboard = () =>
       Markup.button.callback("🟢/🔴 isActive", "cat_edit_toggle_isActive"),
       Markup.button.callback("🌓 overlay", "cat_edit_toggle_overlay"),
     ],
+
     [
       Markup.button.callback("📝 title", "cat_edit_prompt:title"),
       Markup.button.callback("🔑 key", "cat_edit_prompt:key"),
     ],
-    [
-      Markup.button.callback("🏷 badgeText", "cat_edit_prompt:badgeText"),
-      Markup.button.callback("🔢 sortOrder", "cat_edit_prompt:sortOrder"),
-    ],
-    [Markup.button.callback("🖼 фон (cardBgUrl)", "cat_edit_prompt:cardBgUrl")],
-    [Markup.button.callback("🦆 утка (cardDuckUrl)", "cat_edit_prompt:cardDuckUrl")],
+
+    [Markup.button.callback("🏷 badgeText", "cat_edit_prompt:badgeText")],
+
+    [Markup.button.callback("🔢 sortOrder", "cat_edit_prompt:sortOrder")],
+
+    [Markup.button.callback("🖼 Заменить фон", "cat_edit_prompt:cardBgUrl")],
+
+    [Markup.button.callback("🦆 Заменить утку", "cat_edit_prompt:cardDuckUrl")],
+
     [
       Markup.button.callback("📐 classCardDuck", "cat_edit_pick_classDuck"),
       Markup.button.callback("🔤 titleClass", "cat_edit_pick_titleClass"),
     ],
+
     [Markup.button.callback("🧩 Открыть конструктор", "cat_edit_open_wizard")],
+
     [
       Markup.button.callback("⬅️ К списку", "cat_edit_start"),
       Markup.button.callback("🏠 Меню", "cat_builder_cancel"),
     ],
+    
   ]);
 
 const sendEditMenu = async (ctx) => {
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "cat_edit_menu") return;
 
-  return ctx.replyWithMarkdownV2(
-    renderEditMenuText(st.data).replace(/[-.()]/g, "\\$&"),
-    editMenuKeyboard()
-  );
+  const text = renderEditMenuText(st.data).replace(/[-.()]/g, "\\$&");
+  const kb = editMenuKeyboard();
+
+  // Если пришли из callback-кнопки — обновляем текущий message
+  try {
+    if (ctx.updateType === "callback_query" && ctx.callbackQuery?.message?.message_id) {
+      await ctx.editMessageText(text, { parse_mode: "MarkdownV2", ...kb });
+      return;
+    }
+  } catch {
+    // fallback: если edit не удался — просто отправим новое сообщение
+  }
+
+  return ctx.replyWithMarkdownV2(text, kb);
 };
 
 const builderNavKeyboard = (stepIndex) => {
@@ -194,11 +211,32 @@ const askStep = async (ctx) => {
   const st = getState(ctx.chat.id);
   const step = BUILDER_STEPS[st.step];
 
-  // show preview each time
-  await ctx.replyWithMarkdownV2(
-    renderCategoryPreview(st.data).replace(/[-.()]/g, "\\$&"), // minimal escaping for markdownV2
-    builderNavKeyboard(st.step)
-  );
+
+    // show preview each time (reuse one message)
+    const previewText = renderCategoryPreview(st.data).replace(/[-.()]/g, "\\$&");
+    const previewKb = builderNavKeyboard(st.step);
+
+    // try edit existing preview
+    if (st.previewMsgId) {
+    try {
+        await ctx.telegram.editMessageText(
+        ctx.chat.id,
+        st.previewMsgId,
+        undefined,
+        previewText,
+        { parse_mode: "MarkdownV2", ...previewKb }
+        );
+    } catch {
+        st.previewMsgId = null;
+    }
+    }
+
+    // if no preview message yet — send and remember
+    if (!st.previewMsgId) {
+    const m = await ctx.replyWithMarkdownV2(previewText, previewKb);
+    st.previewMsgId = m?.message_id || null;
+    setState(ctx.chat.id, st);
+    }
 
   if (step === "key") {
     return ctx.reply(
@@ -375,12 +413,13 @@ bot.action("cat_edit_open_wizard", async (ctx) => {
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "cat_edit_menu") return;
 
-  setState(ctx.chat.id, {
+    setState(ctx.chat.id, {
     mode: "cat_edit",
     step: 0,
+    previewMsgId: null,
     editId: st.editId,
     data: { ...st.data },
-  });
+    });
 
   return askStep(ctx);
 });
@@ -431,6 +470,69 @@ bot.action("cat_edit_toggle_overlay", async (ctx) => {
   }
 });
 
+bot.action("cat_edit_clear_badgeText", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  try {
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ badgeText: "" }),
+    });
+
+    st.data.badgeText = updated.category.badgeText || "";
+    setState(ctx.chat.id, st);
+    return sendEditMenu(ctx);
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action("cat_edit_clear_cardBgUrl", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  try {
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ cardBgUrl: "" }),
+    });
+
+    st.data.cardBgUrl = updated.category.cardBgUrl || "";
+    setState(ctx.chat.id, st);
+    return sendEditMenu(ctx);
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action("cat_edit_clear_cardDuckUrl", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  try {
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ cardDuckUrl: "" }),
+    });
+
+    st.data.cardDuckUrl = updated.category.cardDuckUrl || "";
+    setState(ctx.chat.id, st);
+    return sendEditMenu(ctx);
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
 bot.action(/cat_edit_prompt:(key|title|badgeText|cardBgUrl|cardDuckUrl|sortOrder)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
@@ -441,14 +543,17 @@ bot.action(/cat_edit_prompt:(key|title|badgeText|cardBgUrl|cardDuckUrl|sortOrder
   const field = ctx.match[1];
   setState(ctx.chat.id, { ...st, mode: "cat_edit_prompt", field });
 
-  const prompts = {
-    key: "Введите новый *key* (a-z/0-9/-, 2-32) или `-` чтобы отменить",
-    title: "Введите новый *title* или `-` чтобы отменить",
-    badgeText: "Введите новый *badgeText* (или `-` чтобы отменить)",
-    cardBgUrl: "Вставьте новый *cardBgUrl* (https://...) или `-` чтобы отменить",
-    cardDuckUrl: "Вставьте новый *cardDuckUrl* (https://...) или `-` чтобы отменить",
-    sortOrder: "Введите новый *sortOrder* (число) или `-` чтобы отменить",
-  };
+    const prompts = {
+    key: "Введите новый *key* (a-z/0-9/-, 2-32). Напишите `отмена` чтобы вернуться в меню",
+    title: "Введите новый *title*. Напишите `отмена` чтобы вернуться в меню",
+    badgeText:
+    "Введите новый *badgeText*. Отправьте `-` чтобы *очистить* (убрать бейдж). Напишите `отмена` чтобы вернуться в меню",
+    cardBgUrl:
+    "Вставьте *НОВЫЙ* URL для фона (cardBgUrl, Pinata https://...). Напишите `отмена` чтобы вернуться в меню",
+    cardDuckUrl:
+    "Вставьте *НОВЫЙ* URL для утки (cardDuckUrl, Pinata https://...). Напишите `отмена` чтобы вернуться в меню",
+    sortOrder: "Введите новый *sortOrder* (число). Напишите `отмена` чтобы вернуться в меню",
+    };
 
   return ctx.reply(prompts[field], { parse_mode: "Markdown" });
 });
@@ -662,6 +767,8 @@ bot.action("cat_builder_confirm", async (ctx) => {
       body: JSON.stringify(payload),
     });
 
+    st.previewMsgId = null;
+
     clearState(ctx.chat.id);
     return ctx.reply(
       `✅ Категория создана:\n${created.category.title} (${created.category.key})`,
@@ -687,6 +794,8 @@ bot.action("cat_edit_confirm", async (ctx) => {
       body: JSON.stringify(payload),
     });
 
+    st.previewMsgId = null;
+
     clearState(ctx.chat.id);
 
     return ctx.reply(
@@ -711,7 +820,7 @@ bot.on("text", async (ctx) => {
     const text = String(ctx.message.text || "").trim();
 
     // cancel/back
-    if (text === "-") {
+    if (/^отмена$/i.test(text) || /^cancel$/i.test(text)) {
         setState(ctx.chat.id, { ...st, mode: "cat_edit_menu" });
         return sendEditMenu(ctx);
     }
@@ -731,17 +840,22 @@ bot.on("text", async (ctx) => {
     }
 
     if (field === "badgeText") {
-        patch.badgeText = text;
+        // '-' clears badgeText
+        patch.badgeText = text === "-" ? "" : text;
     }
 
     if (field === "cardBgUrl") {
-        if (!isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...)");
-        patch.cardBgUrl = text;
+        // '-' clears url
+        if (text !== "-" && !isValidUrl(text))
+            return ctx.reply("❌ Вставь нормальный URL (https://...) или `-` чтобы очистить");
+        patch.cardBgUrl = text === "-" ? "" : text;
     }
 
     if (field === "cardDuckUrl") {
-        if (!isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...)");
-        patch.cardDuckUrl = text;
+        // '-' clears url
+        if (text !== "-" && !isValidUrl(text))
+            return ctx.reply("❌ Вставь нормальный URL (https://...) или `-` чтобы очистить");
+        patch.cardDuckUrl = text === "-" ? "" : text;
     }
 
     if (field === "sortOrder") {
@@ -775,7 +889,11 @@ bot.on("text", async (ctx) => {
 
         return sendEditMenu(ctx);
     } catch (e) {
-        return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    const msg = String(e.message || "");
+    if (msg.toLowerCase().includes("already exists") || msg.includes("409")) {
+        return ctx.reply("❌ Такой key уже существует. Введите другой или напишите `отмена`.");
+    }
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
     }
     }
 
