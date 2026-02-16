@@ -80,6 +80,9 @@ const BUILDER_STEPS = [
 
 // ===== Step images (Pinata) =====
 const CAT_STEP_IMAGES = {
+  // ===== Категории: выбор варианта (схема 4 вариантов) =====
+  // Можно переопределить через .env, чтобы легко менять картинку без правок кода
+  variant: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreicopjyvhtoec43taajyah3rsb22hriuwm4mdiamilbbqztmfldmoe",
   key: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreifg2pygkq5phcldy6maw36lcxv56my5bjebxwjrqdqbzlsnyyn3qq",
   title: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeieybamq3arkrfiq2r7xpzomjdusk4meyunyalfg44pjrh5yjrecty",
   badgeText: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeidjfskuf4rdoerl3blkkcvlcz5u5nzibxrqs2mjl7axjen65xbdhm",
@@ -119,6 +122,7 @@ const defaultCategoryData = () => ({
   key: "",
   title: "",
   badgeText: "",
+  badgeSide: "left",
   showOverlay: false,
   classCardDuck: "cardImageLeft",
   titleClass: "cardTitle",
@@ -183,6 +187,7 @@ const renderCategoryPreview = (d) => {
   lines.push(`• key: \`${d.key || "—"}\``);
   lines.push(`• title: *${d.title || "—"}*`);
   lines.push(`• badgeText: ${d.badgeText ? `*${d.badgeText}*` : "—"}`);
+  lines.push(`• badgeSide: *${d.badgeText ? (d.badgeSide || "left") : "—"}*`);
   lines.push(`• showOverlay: *${d.showOverlay ? "true" : "false"}*`);
   lines.push(`• classCardDuck: ${getDuckLabel(d.classCardDuck)} (\`${d.classCardDuck}\`)`);
   lines.push(`• titleClass: ${getTitleLabel(d.titleClass)} (\`${d.titleClass}\`)`);
@@ -317,8 +322,14 @@ const askStep = async (ctx) => {
   if (step === "badge") {
     const caption = `${preview}\n\nХотите добавить бейдж?`;
     const kb = Markup.inlineKeyboard([
-      [Markup.button.callback("SALE", "cat_builder_set_badge:SALE")],
-      [Markup.button.callback("NEW DROP", "cat_builder_set_badge:NEW DROP")],
+      [
+        Markup.button.callback("SALE (слева)", "cat_builder_set_badge:SALE:left"),
+        Markup.button.callback("SALE (справа)", "cat_builder_set_badge:SALE:right"),
+      ],
+      [
+        Markup.button.callback("NEW DROP (слева)", "cat_builder_set_badge:NEW DROP:left"),
+        Markup.button.callback("NEW DROP (справа)", "cat_builder_set_badge:NEW DROP:right"),
+      ],
       [Markup.button.callback("НЕ ДОБАВЛЯТЬ", "cat_builder_set_badge:NONE")],
       [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
     ]);
@@ -528,15 +539,31 @@ bot.action(/cat_builder_set_variant:(1|2|3|4)/, async (ctx) => {
   return nextStep(ctx);
 });
 
-bot.action(/cat_builder_set_badge:(SALE|NEW DROP|NONE)/, async (ctx) => {
+// SALE/NEW DROP + side
+bot.action(/cat_builder_set_badge:(SALE|NEW DROP):(left|right)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
   if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
-  const v = ctx.match[1];
-  st.data.badgeText = v === "NONE" ? "" : v;
+  st.data.badgeText = ctx.match[1];
+  st.data.badgeSide = ctx.match[2] === "right" ? "right" : "left";
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+// NONE
+bot.action("cat_builder_set_badge:NONE", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  st.data.badgeText = "";
+  st.data.badgeSide = "left";
 
   setState(ctx.chat.id, st);
   return nextStep(ctx);
