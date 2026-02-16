@@ -65,23 +65,23 @@ function translitRuToLat(input) {
   return out;
 }
 
-async function ensureUniqueCategoryKey(baseKey) {
-  let key = String(baseKey || "").trim();
-  if (!key) key = "category";
+// async function ensureUniqueCategoryKey(baseKey) {
+//   let key = String(baseKey || "").trim();
+//   if (!key) key = "category";
 
-  const exists0 = await Category.findOne({ key }, { _id: 1 }).lean();
-  if (!exists0) return key;
+//   const exists0 = await Category.findOne({ key }, { _id: 1 }).lean();
+//   if (!exists0) return key;
 
-  for (let i = 2; i <= 50; i++) {
-    const suffix = `-${i}`;
-    const cut = Math.max(0, 32 - suffix.length);
-    const candidate = `${key.slice(0, cut).replace(/-+$/, "")}${suffix}`;
-    const exists = await Category.findOne({ key: candidate }, { _id: 1 }).lean();
-    if (!exists) return candidate;
-  }
+//   for (let i = 2; i <= 50; i++) {
+//     const suffix = `-${i}`;
+//     const cut = Math.max(0, 32 - suffix.length);
+//     const candidate = `${key.slice(0, cut).replace(/-+$/, "")}${suffix}`;
+//     const exists = await Category.findOne({ key: candidate }, { _id: 1 }).lean();
+//     if (!exists) return candidate;
+//   }
 
-  return `${key.slice(0, 24).replace(/-+$/, "")}-${Date.now().toString(36).slice(-6)}`;
-}
+//   return `${key.slice(0, 24).replace(/-+$/, "")}-${Date.now().toString(36).slice(-6)}`;
+// }
 
 // =====================================================
 // ====================== UI MENU =======================
@@ -117,16 +117,8 @@ const BUILDER_STEPS = [
 
 // ===== Step images (Pinata) =====
 const CAT_STEP_IMAGES = {
-  // ===== Категории: выбор варианта (схема 4 вариантов) =====
-  // Можно переопределить через .env, чтобы легко менять картинку без правок кода
   variant: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreicopjyvhtoec43taajyah3rsb22hriuwm4mdiamilbbqztmfldmoe",
-  title: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeieybamq3arkrfiq2r7xpzomjdusk4meyunyalfg44pjrh5yjrecty",
-  badgeText: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeidjfskuf4rdoerl3blkkcvlcz5u5nzibxrqs2mjl7axjen65xbdhm",
-  showOverlay: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeihyokn353keqwufizwwvxlviqcw2njrox4n72pgtlhhbphon64ydu",
-  classCardDuck: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiek577kz4w4iquo2gskyobzd34cuaxxv6ztqcrcf25z345ezdm6e4",
-  titleClass: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeibpayzmjfpkqak6ytkcnhishguq3fq3qf6bdjblmbl2pka2y7v6sq",
-  cardBgUrl: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeigccmktm2i5f2g6ves3l754jkz3wn6auxclqarcra33uautb67nii",
-  cardDuckUrl: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeigvoryk67aa3hhlslovtwai3q6evzs2vakd2oaudif6qsu4xz4mqq",
+  assetsAndTitle: "",
   sortOrder: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiaectbg64b5iud6p3thvqmciwusne4xvn2woosyso3cgqruoqx3wy",
   isActive: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeibqdkr5tk6ozooh4lngx37coih63v7m2ufrspimstxccxbcuqfzke",
   confirm: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreiembjot7lxn3lvjwkjc5nswqizgldije3hrib2jy5hdxkgtfnzh7q",
