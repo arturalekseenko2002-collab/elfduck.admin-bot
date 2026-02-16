@@ -42,7 +42,6 @@ const api = async (path, options = {}) => {
   return data;
 };
 
-const isValidKey = (s) => /^[a-z0-9-]{2,32}$/.test(s);
 const isValidUrl = (s) => /^https?:\/\/\S+$/i.test(s);
 
 // =====================================================
@@ -84,6 +83,7 @@ const CAT_STEP_IMAGES = {
   // Можно переопределить через .env, чтобы легко менять картинку без правок кода
   variant: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreicopjyvhtoec43taajyah3rsb22hriuwm4mdiamilbbqztmfldmoe",
   key: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreifg2pygkq5phcldy6maw36lcxv56my5bjebxwjrqdqbzlsnyyn3qq",
+  assetsAndTitle: "",
   title: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeieybamq3arkrfiq2r7xpzomjdusk4meyunyalfg44pjrh5yjrecty",
   badgeText: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeidjfskuf4rdoerl3blkkcvlcz5u5nzibxrqs2mjl7axjen65xbdhm",
   showOverlay: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeihyokn353keqwufizwwvxlviqcw2njrox4n72pgtlhhbphon64ydu",
@@ -293,14 +293,6 @@ const askStep = async (ctx) => {
 
   if (step === "key") {
     question = "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`";
-  } else if (step === "title") {
-    question = "Введите *title* (как на карточке), пример: `ЖИДКОСТИ`";
-  } else if (step === "badgeText") {
-    question = "Введите *badgeText* (например `NEW DROP`) или отправьте `-` чтобы оставить пустым";
-  } else if (step === "cardBgUrl") {
-    question = "Вставьте *фон карточки* (Pinata URL) или `-` чтобы пропустить";
-  } else if (step === "cardDuckUrl") {
-    question = "Вставьте *утку* (Pinata URL) или `-` чтобы пропустить";
   } else if (step === "sortOrder") {
     question = "Введите *порядок в сетке* (0,1,2...)";
   } else if (step === "confirm") {
@@ -348,44 +340,6 @@ const askStep = async (ctx) => {
     return sendStepCard(ctx, { photoUrl, caption, keyboard: navKb });
   }
 
-  // // Для кнопочных шагов — тоже можно сделать 1 сообщение:
-  // if (step === "showOverlay") {
-  //   const caption = `${preview}\n\nНужно ли затемнение (overlay)?`;
-  //   const kb = Markup.inlineKeyboard([
-  //     [Markup.button.callback("✅ Да", "cat_builder_set_showOverlay:true")],
-  //     [Markup.button.callback("❌ Нет", "cat_builder_set_showOverlay:false")],
-  //     [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-  //   ]);
-  //   return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
-  // }
-
-  // if (step === "classCardDuck") {
-  //   const caption = `${preview}\n\nВыберите позицию/класс утки:`;
-  //   const kb = Markup.inlineKeyboard([
-  //     ...DUCK_CLASS_OPTIONS.map((o) => [
-  //       Markup.button.callback(o.label, `cat_builder_set_classCardDuck:${o.value}`),
-  //     ]),
-  //     [
-  //       Markup.button.callback("⬅️ Назад", "cat_builder_back"),
-  //       Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
-  //     ],
-  //   ]);
-  //   return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
-  // }
-
-  // if (step === "titleClass") {
-  //   const caption = `${preview}\n\nВыберите стиль заголовка:`;
-  //   const kb = Markup.inlineKeyboard([
-  //     ...TITLE_CLASS_OPTIONS.map((o) => [
-  //       Markup.button.callback(o.label, `cat_builder_set_titleClass:${o.value}`),
-  //     ]),
-  //     [
-  //       Markup.button.callback("⬅️ Назад", "cat_builder_back"),
-  //       Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
-  //     ],
-  //   ]);
-  //   return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
-  // }
 
   if (step === "isActive") {
     const caption = `${preview}\n\nКатегория активна?`;
