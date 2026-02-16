@@ -82,6 +82,41 @@ const BUILDER_STEPS = [
   "confirm",
 ];
 
+// ===== Step images (Pinata) =====
+const CAT_STEP_IMAGES = {
+  key: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreifg2pygkq5phcldy6maw36lcxv56my5bjebxwjrqdqbzlsnyyn3qq",
+  title: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeieybamq3arkrfiq2r7xpzomjdusk4meyunyalfg44pjrh5yjrecty",
+  badgeText: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeidjfskuf4rdoerl3blkkcvlcz5u5nzibxrqs2mjl7axjen65xbdhm",
+  showOverlay: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeihyokn353keqwufizwwvxlviqcw2njrox4n72pgtlhhbphon64ydu",
+  classCardDuck: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiek577kz4w4iquo2gskyobzd34cuaxxv6ztqcrcf25z345ezdm6e4",
+  titleClass: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeibpayzmjfpkqak6ytkcnhishguq3fq3qf6bdjblmbl2pka2y7v6sq",
+  cardBgUrl: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeigccmktm2i5f2g6ves3l754jkz3wn6auxclqarcra33uautb67nii",
+  cardDuckUrl: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeigvoryk67aa3hhlslovtwai3q6evzs2vakd2oaudif6qsu4xz4mqq",
+  sortOrder: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiaectbg64b5iud6p3thvqmciwusne4xvn2woosyso3cgqruoqx3wy",
+  isActive: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeibqdkr5tk6ozooh4lngx37coih63v7m2ufrspimstxccxbcuqfzke",
+  confirm: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreiembjot7lxn3lvjwkjc5nswqizgldije3hrib2jy5hdxkgtfnzh7q",
+};
+
+// ===== Send ONE message: photo + caption + keyboard (or text fallback) =====
+const sendStepCard = async (ctx, { photoUrl, caption, keyboard }) => {
+  if (photoUrl && isValidUrl(photoUrl)) {
+    // caption у Telegram ограничен ~1024 символами
+    return ctx.replyWithPhoto(
+      { url: photoUrl },
+      {
+        caption,
+        parse_mode: "Markdown",
+        ...(keyboard ? keyboard : {}),
+      }
+    );
+  }
+
+  return ctx.reply(caption, {
+    parse_mode: "Markdown",
+    ...(keyboard ? keyboard : {}),
+  });
+};
+
 // ----- defaults for new category -----
 const defaultCategoryData = () => ({
   key: "",
@@ -194,82 +229,80 @@ const askStep = async (ctx) => {
   const st = getState(ctx.chat.id);
   const step = BUILDER_STEPS[st.step];
 
-  // show preview each time
-  await ctx.replyWithMarkdownV2(
-    renderCategoryPreview(st.data).replace(/[-.()]/g, "\\$&"), // minimal escaping for markdownV2
-    builderNavKeyboard(st.step)
-  );
+  const preview = renderCategoryPreview(st.data);
+  const navKb = builderNavKeyboard(st.step);
+
+  // Текст вопроса для каждого шага
+  let question = "";
 
   if (step === "key") {
-    return ctx.reply(
-      "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`",
-      { parse_mode: "Markdown" }
-    );
+    question = "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`";
+  } else if (step === "title") {
+    question = "Введите *title* (как на карточке), пример: `ЖИДКОСТИ`";
+  } else if (step === "badgeText") {
+    question = "Введите *badgeText* (например `NEW DROP`) или отправьте `-` чтобы оставить пустым";
+  } else if (step === "cardBgUrl") {
+    question = "Вставьте *фон карточки* (Pinata URL) или `-` чтобы пропустить";
+  } else if (step === "cardDuckUrl") {
+    question = "Вставьте *утку* (Pinata URL) или `-` чтобы пропустить";
+  } else if (step === "sortOrder") {
+    question = "Введите *порядок в сетке* (0,1,2...)";
+  } else if (step === "confirm") {
+    const isEdit = st?.mode === "cat_edit";
+    question = isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?";
   }
 
-  if (step === "title") {
-    return ctx.reply("Введите *title* (как на карточке), пример: `ЖИДКОСТИ`", { parse_mode: "Markdown" });
+  // Кнопочные шаги оставим как есть (там inline keyboard да/нет)
+  // но превью всё равно можно отправить одним сообщением (см. ниже)
+
+  // Если шаг НЕ кнопочный — отправляем 1 сообщение (картинка+подпись)
+  const photoUrl = CAT_STEP_IMAGES[step];
+  if (
+    ["key", "title", "badgeText", "cardBgUrl", "cardDuckUrl", "sortOrder", "confirm"].includes(step)
+  ) {
+    const caption = `${preview}\n\n*Вопрос:*\n${question}`;
+    return sendStepCard(ctx, { photoUrl, caption, keyboard: navKb });
   }
 
-  if (step === "badgeText") {
-    return ctx.reply("Введите *badgeText* (например `NEW DROP`) или отправьте `-` чтобы оставить пустым", {
-      parse_mode: "Markdown",
-    });
-  }
-
+  // Для кнопочных шагов — тоже можно сделать 1 сообщение:
   if (step === "showOverlay") {
-    return ctx.reply(
-      "Нужно ли затемнение (overlay)?",
-      Markup.inlineKeyboard([
-        [Markup.button.callback("✅ Да", "cat_builder_set_showOverlay:true")],
-        [Markup.button.callback("❌ Нет", "cat_builder_set_showOverlay:false")],
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
+    const caption = `${preview}\n\nНужно ли затемнение (overlay)?`;
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Да", "cat_builder_set_showOverlay:true")],
+      [Markup.button.callback("❌ Нет", "cat_builder_set_showOverlay:false")],
+      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
   }
 
   if (step === "classCardDuck") {
-    return ctx.reply(
-      "Выберите позицию/класс утки (classCardDuck):",
-      Markup.inlineKeyboard([
-        ...DUCK_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_classCardDuck:${c}`)]),
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
+    const caption = `${preview}\n\nВыберите позицию/класс утки:`;
+    const kb = Markup.inlineKeyboard([
+      ...DUCK_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_classCardDuck:${c}`)]),
+      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
   }
 
   if (step === "titleClass") {
-    return ctx.reply(
-      "Выберите стиль заголовка (titleClass):",
-      Markup.inlineKeyboard([
-        ...TITLE_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_titleClass:${c}`)]),
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
-  }
-
-  if (step === "cardBgUrl") {
-    return ctx.reply("Вставьте *cardBgUrl* (Pinata URL) или `-` чтобы пропустить", { parse_mode: "Markdown" });
-  }
-
-  if (step === "cardDuckUrl") {
-    return ctx.reply("Вставьте *cardDuckUrl* (Pinata URL) или `-` чтобы пропустить", { parse_mode: "Markdown" });
-  }
-
-  if (step === "sortOrder") {
-    return ctx.reply("Введите *sortOrder* (число: 0,1,2...) — порядок в сетке", { parse_mode: "Markdown" });
+    const caption = `${preview}\n\nВыберите стиль заголовка:`;
+    const kb = Markup.inlineKeyboard([
+      ...TITLE_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_titleClass:${c}`)]),
+      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
   }
 
   if (step === "isActive") {
-    return ctx.reply(
-      "Категория активна?",
-      Markup.inlineKeyboard([
-        [Markup.button.callback("✅ Включить", "cat_builder_set_isActive:true")],
-        [Markup.button.callback("⛔️ Выключить", "cat_builder_set_isActive:false")],
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-      ])
-    );
+    const caption = `${preview}\n\nКатегория активна?`;
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Включить", "cat_builder_set_isActive:true")],
+      [Markup.button.callback("⛔️ Выключить", "cat_builder_set_isActive:false")],
+      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
   }
+
 
     if (step === "confirm") {
     const st = getState(ctx.chat.id);
