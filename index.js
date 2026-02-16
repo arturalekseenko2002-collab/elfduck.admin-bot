@@ -258,7 +258,7 @@ const askStep = async (ctx) => {
   // Если шаг НЕ кнопочный — отправляем 1 сообщение (картинка+подпись)
   const photoUrl = CAT_STEP_IMAGES[step];
   if (
-    ["key", "title", "badgeText", "cardBgUrl", "cardDuckUrl", "sortOrder", "confirm"].includes(step)
+    ["key", "title", "badgeText", "cardBgUrl", "cardDuckUrl", "sortOrder"].includes(step)
   ) {
     const caption = `${preview}\n\n*Вопрос:*\n${question}`;
     return sendStepCard(ctx, { photoUrl, caption, keyboard: navKb });
@@ -303,24 +303,31 @@ const askStep = async (ctx) => {
     return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
   }
 
-
-    if (step === "confirm") {
+  if (step === "confirm") {
     const st = getState(ctx.chat.id);
     const isEdit = st?.mode === "cat_edit";
 
-    return ctx.reply(
-        isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?",
-        Markup.inlineKeyboard([
-        [
-            Markup.button.callback(
-            isEdit ? "💾 Сохранить" : "✅ Создать",
-            isEdit ? "cat_edit_confirm" : "cat_builder_confirm"
-            ),
-        ],
-        [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-        ])
-    );
-    }
+    const caption = `${preview}\n\n*Вопрос:*\n${isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?"}`;
+
+    const kb = Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          isEdit ? "💾 Сохранить" : "✅ Создать",
+          isEdit ? "cat_edit_confirm" : "cat_builder_confirm"
+        ),
+      ],
+      [
+        Markup.button.callback("⬅️ Назад", "cat_builder_back"),
+        Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
+      ],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: CAT_STEP_IMAGES.confirm,
+      caption,
+      keyboard: kb,
+    });
+  }
 };
 
 const nextStep = async (ctx) => {
