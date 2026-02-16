@@ -131,15 +131,24 @@ const defaultCategoryData = () => ({
   isActive: true,
 });
 
-// ----- available UI classes (you can expand anytime) -----
-const DUCK_CLASSES = [
-  "высота 95%, слева",
-  "высота 60%, справа",
-  "высота 60%, слева",
-  "высота 95%, справа",
+// ----- options: managers see `label`, DB stores `value` -----
+const DUCK_CLASS_OPTIONS = [
+  { label: "высота 95%, слева", value: "cardImageLeft" },
+  { label: "высота 60%, справа", value: "cardImageRight" },
+  { label: "высота 60%, слева", value: "cardImageLeft2" },
+  { label: "высота 95%, справа", value: "cardImageRight2" },
 ];
 
-const TITLE_CLASSES = ["сверху", "по центру"];
+const TITLE_CLASS_OPTIONS = [
+  { label: "сверху", value: "cardTitle" },
+  { label: "по центру", value: "cardTitle2" },
+];
+
+const getDuckLabel = (value) =>
+  DUCK_CLASS_OPTIONS.find((o) => o.value === value)?.label || value || "—";
+
+const getTitleLabel = (value) =>
+  TITLE_CLASS_OPTIONS.find((o) => o.value === value)?.label || value || "—";
 
 // ----- render preview text -----
 const renderCategoryPreview = (d) => {
@@ -150,8 +159,8 @@ const renderCategoryPreview = (d) => {
   lines.push(`• title: *${d.title || "—"}*`);
   lines.push(`• badgeText: ${d.badgeText ? `*${d.badgeText}*` : "—"}`);
   lines.push(`• showOverlay: *${d.showOverlay ? "true" : "false"}*`);
-  lines.push(`• classCardDuck: \`${d.classCardDuck}\``);
-  lines.push(`• titleClass: \`${d.titleClass}\``);
+  lines.push(`• classCardDuck: ${getDuckLabel(d.classCardDuck)} (\`${d.classCardDuck}\`)`);
+  lines.push(`• titleClass: ${getTitleLabel(d.titleClass)} (\`${d.titleClass}\`)`);
   lines.push(`• cardBgUrl: ${d.cardBgUrl || "—"}`);
   lines.push(`• cardDuckUrl: ${d.cardDuckUrl || "—"}`);
   lines.push(`• sortOrder: *${d.sortOrder}*`);
@@ -168,8 +177,8 @@ const renderEditMenuText = (d) => {
   lines.push(`• title: *${d.title || "—"}*`);
   lines.push(`• badgeText: ${d.badgeText ? `*${d.badgeText}*` : "—"}`);
   lines.push(`• showOverlay: *${d.showOverlay ? "true" : "false"}*`);
-  lines.push(`• classCardDuck: \`${d.classCardDuck || "—"}\``);
-  lines.push(`• titleClass: \`${d.titleClass || "—"}\``);
+  lines.push(`• classCardDuck: ${getDuckLabel(d.classCardDuck)} (\`${d.classCardDuck || "—"}\`)`);
+  lines.push(`• titleClass: ${getTitleLabel(d.titleClass)} (\`${d.titleClass || "—"}\`)`);
   lines.push(`• cardBgUrl: ${d.cardBgUrl || "—"}`);
   lines.push(`• cardDuckUrl: ${d.cardDuckUrl || "—"}`);
   lines.push(`• sortOrder: *${d.sortOrder ?? 0}*`);
@@ -278,8 +287,13 @@ const askStep = async (ctx) => {
   if (step === "classCardDuck") {
     const caption = `${preview}\n\nВыберите позицию/класс утки:`;
     const kb = Markup.inlineKeyboard([
-      ...DUCK_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_classCardDuck:${c}`)]),
-      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+      ...DUCK_CLASS_OPTIONS.map((o) => [
+        Markup.button.callback(o.label, `cat_builder_set_classCardDuck:${o.value}`),
+      ]),
+      [
+        Markup.button.callback("⬅️ Назад", "cat_builder_back"),
+        Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
+      ],
     ]);
     return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
   }
@@ -287,8 +301,13 @@ const askStep = async (ctx) => {
   if (step === "titleClass") {
     const caption = `${preview}\n\nВыберите стиль заголовка:`;
     const kb = Markup.inlineKeyboard([
-      ...TITLE_CLASSES.map((c) => [Markup.button.callback(c, `cat_builder_set_titleClass:${c}`)]),
-      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+      ...TITLE_CLASS_OPTIONS.map((o) => [
+        Markup.button.callback(o.label, `cat_builder_set_titleClass:${o.value}`),
+      ]),
+      [
+        Markup.button.callback("⬅️ Назад", "cat_builder_back"),
+        Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
+      ],
     ]);
     return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
   }
@@ -503,7 +522,7 @@ bot.action("cat_edit_pick_classDuck", async (ctx) => {
   return ctx.reply(
     "Выберите classCardDuck:",
     Markup.inlineKeyboard([
-      ...DUCK_CLASSES.map((c) => [Markup.button.callback(c, `cat_edit_set_classDuck:${c}`)]),
+      ...DUCK_CLASS_OPTIONS.map((o) => [Markup.button.callback(o.label, `cat_edit_set_classDuck:${o.value}`)]),
       [Markup.button.callback("⬅️ Назад", "cat_edit_back_to_menu")],
     ])
   );
@@ -517,7 +536,7 @@ bot.action(/cat_edit_set_classDuck:(.+)/, async (ctx) => {
   if (!st || st.mode !== "cat_edit_menu") return;
 
   const val = ctx.match[1];
-  const nextVal = DUCK_CLASSES.includes(val) ? val : "cardImageLeft";
+  const nextVal = DUCK_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardImageLeft";
 
   try {
     const updated = await api(`/admin/categories/${st.editId}`, {
@@ -543,7 +562,7 @@ bot.action("cat_edit_pick_titleClass", async (ctx) => {
   return ctx.reply(
     "Выберите titleClass:",
     Markup.inlineKeyboard([
-      ...TITLE_CLASSES.map((c) => [Markup.button.callback(c, `cat_edit_set_titleClass:${c}`)]),
+      ...TITLE_CLASS_OPTIONS.map((o) => [Markup.button.callback(o.label, `cat_edit_set_titleClass:${o.value}`)]),
       [Markup.button.callback("⬅️ Назад", "cat_edit_back_to_menu")],
     ])
   );
@@ -557,7 +576,7 @@ bot.action(/cat_edit_set_titleClass:(.+)/, async (ctx) => {
   if (!st || st.mode !== "cat_edit_menu") return;
 
   const val = ctx.match[1];
-  const nextVal = TITLE_CLASSES.includes(val) ? val : "cardTitle";
+  const nextVal = TITLE_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardTitle";
 
   try {
     const updated = await api(`/admin/categories/${st.editId}`, {
@@ -656,7 +675,7 @@ bot.action(/cat_builder_set_classCardDuck:(.+)/, async (ctx) => {
   if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   const val = ctx.match[1];
-  st.data.classCardDuck = DUCK_CLASSES.includes(val) ? val : "cardImageLeft";
+  st.data.classCardDuck = DUCK_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardImageLeft";
   setState(ctx.chat.id, st);
   return nextStep(ctx);
 });
@@ -669,7 +688,7 @@ bot.action(/cat_builder_set_titleClass:(.+)/, async (ctx) => {
   if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
 
   const val = ctx.match[1];
-  st.data.titleClass = TITLE_CLASSES.includes(val) ? val : "cardTitle";
+  st.data.titleClass = TITLE_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardTitle";
   setState(ctx.chat.id, st);
   return nextStep(ctx);
 });
