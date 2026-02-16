@@ -140,8 +140,8 @@ const DUCK_CLASS_OPTIONS = [
 ];
 
 const TITLE_CLASS_OPTIONS = [
-  { label: "сверху", value: "cardTitle" },
-  { label: "по центру", value: "cardTitle2" },
+  { label: "по центру", value: "cardTitle" },
+  { label: "сверху", value: "cardTitle2" },
 ];
 
 const getDuckLabel = (value) =>
