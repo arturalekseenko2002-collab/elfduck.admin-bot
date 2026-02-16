@@ -139,7 +139,7 @@ const DUCK_CLASSES = [
   "высота 95%, справа",
 ];
 
-const TITLE_CLASSES = ["cardTitle", "cardTitle2"];
+const TITLE_CLASSES = ["сверху", "по центру"];
 
 // ----- render preview text -----
 const renderCategoryPreview = (d) => {
