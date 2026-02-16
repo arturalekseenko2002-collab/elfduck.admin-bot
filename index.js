@@ -133,10 +133,10 @@ const defaultCategoryData = () => ({
 
 // ----- available UI classes (you can expand anytime) -----
 const DUCK_CLASSES = [
-  "cardImageLeft",
-  "cardImageRight",
-  "cardImageLeft2",
-  "cardImageRight2",
+  "высота 95%, слева",
+  "высота 60%, справа",
+  "высота 60%, слева",
+  "высота 95%, справа",
 ];
 
 const TITLE_CLASSES = ["cardTitle", "cardTitle2"];
