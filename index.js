@@ -65,30 +65,13 @@ function translitRuToLat(input) {
   return out;
 }
 
-// async function ensureUniqueCategoryKey(baseKey) {
-//   let key = String(baseKey || "").trim();
-//   if (!key) key = "category";
-
-//   const exists0 = await Category.findOne({ key }, { _id: 1 }).lean();
-//   if (!exists0) return key;
-
-//   for (let i = 2; i <= 50; i++) {
-//     const suffix = `-${i}`;
-//     const cut = Math.max(0, 32 - suffix.length);
-//     const candidate = `${key.slice(0, cut).replace(/-+$/, "")}${suffix}`;
-//     const exists = await Category.findOne({ key: candidate }, { _id: 1 }).lean();
-//     if (!exists) return candidate;
-//   }
-
-//   return `${key.slice(0, 24).replace(/-+$/, "")}-${Date.now().toString(36).slice(-6)}`;
-// }
-
 // =====================================================
 // ====================== UI MENU =======================
 // =====================================================
 const mainMenu = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback("➕ Создать категорию (конструктор)", "cat_builder_start")],
+    [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
   ]);
@@ -114,6 +97,271 @@ const BUILDER_STEPS = [
   "isActive",
   "confirm",
 ];
+
+// =====================================================
+// =================== PRODUCT BUILDER =================
+// =====================================================
+
+const PRODUCT_BUILDER_STEPS = [
+  "category",
+  "titles",
+  "price",
+  "cardImages",
+  "layout",
+  "badge",
+  "orderImage",
+  "titleModal",
+  "accentColor",
+  "sortOrder",
+  "isActive",
+  "confirm",
+];
+
+// =================== PRODUCT BUILDER (WIZARD) ===================
+
+// ===== Product builder: presets for layout =====
+const PRODUCT_LAYOUTS = [
+  {
+    id: 1,
+    label: "Вариант 1 — утка справа / кнопки справа",
+    value: {
+      classCardDuck: "productCardImageRight",
+      classActions: "productActionsRight",
+    },
+  },
+  {
+    id: 2,
+    label: "Вариант 2 — утка слева / кнопки слева",
+    value: {
+      classCardDuck: "productCardImageLeft",
+      classActions: "productActionsLeft",
+    },
+  },
+];
+
+// ----- defaults for new product -----
+const defaultProductData = () => ({
+  categoryKey: "",
+
+  title1: "",
+  title2: "",
+  titleModal: "",
+  price: 0,
+
+  cardBgUrl: "",
+  cardDuckUrl: "",
+  orderImgUrl: "",
+
+  classCardDuck: "",
+  classActions: "",
+
+  classNewBadge: "",
+  newBadge: "",
+
+  accentColor: "", // "32, 130, 231"
+
+  sortOrder: 0,
+  isActive: true,
+});
+
+// ===== optional: step images (can be empty) =====
+const PRODUCT_STEP_IMAGES = {
+  category: "",
+  titles: "",
+  price: "",
+  cardImages: "",
+  layout: "",
+  badge: "",
+  orderImage: "",
+  titleModal: "",
+  accentColor: "",
+  sortOrder: "",
+  isActive: "",
+  confirm: "",
+};
+
+const renderProductPreview = (d) => {
+  const lines = [];
+  lines.push("🧩 *Конструктор товара — превью*");
+  lines.push("");
+  lines.push(`• категория: *${d.categoryKey || "—"}*`);
+  lines.push(`• название (1): *${d.title1 || "—"}*`);
+  lines.push(`• название (2): *${d.title2 || "—"}*`);
+  lines.push(`• цена: *${Number(d.price || 0)}*`);
+  lines.push(`• фон (карточка): ${d.cardBgUrl || "—"}`);
+  lines.push(`• утка (карточка): ${d.cardDuckUrl || "—"}`);
+  lines.push(
+    `• расположение: ${d.classCardDuck ? `\`${d.classCardDuck}\`` : "—"} / ${
+      d.classActions ? `\`${d.classActions}\`` : "—"
+    }`
+  );
+  lines.push(`• бейдж: ${d.newBadge ? `*${d.newBadge}* (\`${d.classNewBadge}\`)` : "—"}`);
+  lines.push(`• картинка (оформление): ${d.orderImgUrl || "—"}`);
+  lines.push(`• название (оформление): *${d.titleModal || "—"}*`);
+  lines.push(`• цвет (RGB): ${d.accentColor ? `\`${d.accentColor}\`` : "—"}`);
+  lines.push(`• sortOrder: *${d.sortOrder}*`);
+  lines.push(`• isActive: *${d.isActive ? "true" : "false"}*`);
+  return lines.join("\n");
+};
+
+const productNavKeyboard = (stepIndex) => {
+  const backBtn = stepIndex > 0 ? Markup.button.callback("⬅️ Назад", "prod_builder_back") : null;
+  const cancelBtn = Markup.button.callback("✖️ Отмена", "prod_builder_cancel");
+  return backBtn
+    ? Markup.inlineKeyboard([[backBtn, cancelBtn]])
+    : Markup.inlineKeyboard([[cancelBtn]]);
+};
+
+// ===== ask user per product step =====
+const askProductStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const step = PRODUCT_BUILDER_STEPS[st.step];
+  const preview = renderProductPreview(st.data);
+
+  // 1) CATEGORY (buttons from /categories)
+  if (step === "category") {
+    try {
+      const r = await fetch(`${API_URL}/categories?active=0`);
+      const data = await r.json().catch(() => ({}));
+      const categories = Array.isArray(data) ? data : data.categories || [];
+
+      if (!categories.length) {
+        clearState(ctx.chat.id);
+        return ctx.reply("Категорий пока нет. Сначала создай категорию.", mainMenu());
+      }
+
+      const kb = Markup.inlineKeyboard([
+        ...categories
+          .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+          .map((c) => [
+            Markup.button.callback(
+              `${c.isActive ? "✅" : "⛔️"} ${c.title}`,
+              `prod_set_category:${c.key}`
+            ),
+          ]),
+        [Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+      ]);
+
+      const caption = `${preview}\n\nВыберите *категорию* для товара:`;
+      return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.category, caption, keyboard: kb });
+    } catch (e) {
+      clearState(ctx.chat.id);
+      return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    }
+  }
+
+  // 2) TITLES (text)
+  if (step === "titles") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*первая строка названия, вторая строка названия (или -)*\n\n` +
+      `Пример:\nCHASER, FOR PODS 30 ML\nили\nSOLANA 30 ML, -`;
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.titles, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 3) PRICE (text)
+  if (step === "price") {
+    const caption = `${preview}\n\nВведите *цену* (число), пример: 55`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.price, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 4) CARD IMAGES (text)
+  if (step === "cardImages") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*ссылка_на_фон_карточки, ссылка_на_утку_карточки*\n\n` +
+      `Пример:\nhttps://...bg.png, https://...duck.png`;
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.cardImages, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 5) LAYOUT (buttons)  ✅ вот тут “шаг layout”
+  if (step === "layout") {
+    const caption = `${preview}\n\nВыберите *расположение карточки*:`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("Вариант 1 — утка справа", "prod_set_layout:1")],
+      [Markup.button.callback("Вариант 2 — утка слева", "prod_set_layout:2")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.layout, caption, keyboard: kb });
+  }
+
+  // 6) BADGE (buttons)
+  if (step === "badge") {
+    const caption = `${preview}\n\nХотите добавить бейдж?`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("NEW", "prod_set_badge:NEW"), Markup.button.callback("SALE", "prod_set_badge:SALE")],
+      [Markup.button.callback("НЕ ДОБАВЛЯТЬ", "prod_set_badge:NONE")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.badge, caption, keyboard: kb });
+  }
+
+  // 7) ORDER IMAGE (text)
+  if (step === "orderImage") {
+    const caption = `${preview}\n\nВставь *ссылку на изображение для оформления заказа* (https://...)`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.orderImage, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 8) TITLE MODAL (text)
+  if (step === "titleModal") {
+    const caption = `${preview}\n\nВведите *название для оформления заказа* (как в модалке)`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.titleModal, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 9) ACCENT COLOR (text)
+  if (step === "accentColor") {
+    const caption = `${preview}\n\nВведите *цвет (RGB)* в формате: \`32, 130, 231\``;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.accentColor, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 10) SORT ORDER (text)
+  if (step === "sortOrder") {
+    const caption = `${preview}\n\nВведите *порядок в сетке* (0,1,2...)`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.sortOrder, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 11) IS ACTIVE (buttons)
+  if (step === "isActive") {
+    const caption = `${preview}\n\nТовар активен?`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Включить", "prod_set_isActive:true")],
+      [Markup.button.callback("⛔️ Выключить", "prod_set_isActive:false")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.isActive, caption, keyboard: kb });
+  }
+
+  // 12) CONFIRM (buttons)
+  if (step === "confirm") {
+    const caption = `${preview}\n\n*Вопрос:*\nПодтвердить создание товара?`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Создать", "prod_builder_confirm")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.confirm, caption, keyboard: kb });
+  }
+};
+
+const nextProductStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  st.step += 1;
+  setState(ctx.chat.id, st);
+  return askProductStep(ctx);
+};
 
 // ===== Step images (Pinata) =====
 const CAT_STEP_IMAGES = {
@@ -418,6 +666,257 @@ bot.start(async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔️ Нет доступа");
   clearState(ctx.chat.id);
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu());
+});
+
+// =====================================================
+// =================== PRODUCT BUILDER =================
+// =====================================================
+
+bot.action("prod_builder_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "prod_builder",
+    step: 0,
+    data: defaultProductData(),
+  });
+
+  return askProductStep(ctx);
+});
+
+bot.action("prod_builder_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("Ок, отменил.", mainMenu());
+});
+
+bot.action("prod_builder_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+  return askProductStep(ctx);
+});
+
+// CATEGORY
+bot.action(/prod_set_category:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.data.categoryKey = String(ctx.match[1] || "");
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// LAYOUT
+bot.action(/prod_set_layout:(1|2)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const id = Number(ctx.match[1]);
+  const preset = PRODUCT_LAYOUTS.find((x) => x.id === id);
+  if (!preset) return;
+
+  st.data.classCardDuck = preset.value.classCardDuck;
+  st.data.classActions = preset.value.classActions;
+
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// BADGE
+bot.action(/prod_set_badge:(NEW|SALE|NONE)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const v = String(ctx.match[1]);
+  if (v === "NONE") {
+    st.data.newBadge = "";
+    st.data.classNewBadge = "";
+  } else {
+    st.data.newBadge = v;
+    // у тебя в карточках сейчас используется classNewBadge:"actionBadge sale"
+    st.data.classNewBadge = "actionBadge sale";
+  }
+
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// IS ACTIVE
+bot.action(/prod_set_isActive:(true|false)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.data.isActive = ctx.match[1] === "true";
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// CONFIRM -> POST /admin/products
+bot.action("prod_builder_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  try {
+    // минимальная валидация
+    if (!st.data.categoryKey) throw new Error("Не выбрана категория");
+    if (!st.data.title1) throw new Error("Нет названия (строка 1)");
+    if (!st.data.price || Number(st.data.price) <= 0) throw new Error("Цена должна быть больше 0");
+    if (!st.data.cardBgUrl || !isValidUrl(st.data.cardBgUrl)) throw new Error("Неверная ссылка на фон");
+    if (!st.data.cardDuckUrl || !isValidUrl(st.data.cardDuckUrl)) throw new Error("Неверная ссылка на утку");
+    if (!st.data.orderImgUrl || !isValidUrl(st.data.orderImgUrl)) throw new Error("Неверная ссылка на картинку оформления");
+
+    const payload = {
+      categoryKey: st.data.categoryKey,
+
+      title1: st.data.title1,
+      title2: st.data.title2,
+      titleModal: st.data.titleModal,
+      price: Number(st.data.price || 0),
+
+      cardBgUrl: st.data.cardBgUrl,
+      cardDuckUrl: st.data.cardDuckUrl,
+      orderImgUrl: st.data.orderImgUrl,
+
+      classCardDuck: st.data.classCardDuck,
+      classActions: st.data.classActions,
+
+      classNewBadge: st.data.classNewBadge,
+      newBadge: st.data.newBadge,
+
+      accentColor: st.data.accentColor,
+
+      sortOrder: Number(st.data.sortOrder || 0),
+      isActive: st.data.isActive !== false,
+
+      flavors: [], // вкусы добавим отдельным конструктором
+    };
+
+    const created = await api("/admin/products", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    clearState(ctx.chat.id);
+    return ctx.reply(`✅ Товар создан: ${created?.product?.title1 || "OK"}`, mainMenu());
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+// ===== Text steps handler for product wizard =====
+bot.on("text", async (ctx, next) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return next();
+
+  const step = PRODUCT_BUILDER_STEPS[st.step];
+  const text = String(ctx.message?.text || "").trim();
+
+  try {
+    if (step === "titles") {
+      const parts = text.split(",").map((s) => s.trim());
+      if (parts.length < 2) throw new Error("Нужно 2 значения через запятую");
+
+      st.data.title1 = parts[0] || "";
+      st.data.title2 = parts[1] === "-" ? "" : (parts[1] || "");
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "price") {
+      const n = Number(text.replace(/\s+/g, ""));
+      if (!Number.isFinite(n) || n <= 0) throw new Error("Цена должна быть числом больше 0");
+
+      st.data.price = n;
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "cardImages") {
+      const parts = text.split(",").map((s) => s.trim());
+      if (parts.length < 2) throw new Error("Нужно 2 ссылки через запятую");
+
+      const bg = parts[0];
+      const duck = parts[1];
+
+      if (!isValidUrl(bg)) throw new Error("Ссылка на фон некорректная");
+      if (!isValidUrl(duck)) throw new Error("Ссылка на утку некорректная");
+
+      st.data.cardBgUrl = bg;
+      st.data.cardDuckUrl = duck;
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "orderImage") {
+      if (!isValidUrl(text)) throw new Error("Ссылка некорректная");
+      st.data.orderImgUrl = text;
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "titleModal") {
+      if (text.length < 2) throw new Error("Название слишком короткое");
+      st.data.titleModal = text;
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "accentColor") {
+      const m = text.match(/^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/);
+      if (!m) throw new Error("Формат: 32, 130, 231");
+
+      const r = Number(m[1]);
+      const g = Number(m[2]);
+      const b = Number(m[3]);
+
+      if ([r, g, b].some((x) => x < 0 || x > 255)) throw new Error("RGB должен быть 0..255");
+
+      st.data.accentColor = `${r}, ${g}, ${b}`;
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "sortOrder") {
+      const n = Number(text);
+      if (!Number.isFinite(n) || n < 0) throw new Error("sortOrder должен быть числом 0+");
+
+      st.data.sortOrder = n;
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    return next();
+  } catch (e) {
+    return ctx.reply(`❌ ${e.message}`);
+  }
 });
 
 // ==================== CATEGORY EDIT ===================
@@ -862,6 +1361,36 @@ bot.action("cat_edit_confirm", async (ctx) => {
   }
 });
 
+bot.action(/prod_set_layout:(1|2)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const id = Number(ctx.match[1]);
+  const preset = PRODUCT_LAYOUTS.find((x) => x.id === id);
+  if (!preset) return;
+
+  st.data.classCardDuck = preset.value.classCardDuck;
+  st.data.classActions = preset.value.classActions;
+
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+bot.action(/prod_set_category:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.data.categoryKey = ctx.match[1];
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
 // ----- text inputs for steps -----
 bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
@@ -949,16 +1478,6 @@ bot.on("text", async (ctx) => {
     const step = BUILDER_STEPS[st.step];
     const text = String(ctx.message.text || "").trim();
 
-  // key
-  // if (step === "key") {
-  //   if (!isValidKey(text)) {
-  //     return ctx.reply("❌ Неверный key. Формат: a-z, 0-9, дефис. 2-32 символа. Пример: liquids");
-  //   }
-  //   st.data.key = text;
-  //   setState(ctx.chat.id, st);
-  //   return nextStep(ctx);
-  // }
-
   if (step === "assetsAndTitle") {
   const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
 
@@ -985,37 +1504,6 @@ bot.on("text", async (ctx) => {
   setState(ctx.chat.id, st);
   return nextStep(ctx);
 }
-
-  // title
-  // if (step === "title") {
-  //   if (text.length < 2) return ctx.reply("❌ Слишком короткий title");
-  //   st.data.title = text;
-  //   setState(ctx.chat.id, st);
-  //   return nextStep(ctx);
-  // }
-
-  // // badgeText
-  // if (step === "badgeText") {
-  //   st.data.badgeText = text === "-" ? "" : text;
-  //   setState(ctx.chat.id, st);
-  //   return nextStep(ctx);
-  // }
-
-  // // cardBgUrl
-  // if (step === "cardBgUrl") {
-  //   if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
-  //   st.data.cardBgUrl = text === "-" ? "" : text;
-  //   setState(ctx.chat.id, st);
-  //   return nextStep(ctx);
-  // }
-
-  // // cardDuckUrl
-  // if (step === "cardDuckUrl") {
-  //   if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
-  //   st.data.cardDuckUrl = text === "-" ? "" : text;
-  //   setState(ctx.chat.id, st);
-  //   return nextStep(ctx);
-  // }
 
   // sortOrder
   if (step === "sortOrder") {
