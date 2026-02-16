@@ -69,14 +69,10 @@ const clearState = (chatId) => state.delete(String(chatId));
 
 // ----- Builder steps order -----
 const BUILDER_STEPS = [
+  "variant",
   "key",
-  "title",
-  "badgeText",
-  "showOverlay",
-  "classCardDuck",
-  "titleClass",
-  "cardBgUrl",
-  "cardDuckUrl",
+  "assetsAndTitle",
+  "badge",
   "sortOrder",
   "isActive",
   "confirm",
@@ -99,26 +95,27 @@ const CAT_STEP_IMAGES = {
 
 // ===== Send ONE message: photo + caption + keyboard (or text fallback) =====
 const sendStepCard = async (ctx, { photoUrl, caption, keyboard }) => {
+  const extra = {
+    caption,
+    parse_mode: "Markdown",
+    ...(keyboard?.reply_markup ? { reply_markup: keyboard.reply_markup } : {}),
+  };
+
   if (photoUrl && isValidUrl(photoUrl)) {
-    // caption у Telegram ограничен ~1024 символами
-    return ctx.replyWithPhoto(
-      { url: photoUrl },
-      {
-        caption,
-        parse_mode: "Markdown",
-        ...(keyboard ? keyboard : {}),
-      }
-    );
+    return ctx.replyWithPhoto({ url: photoUrl }, extra);
   }
 
-  return ctx.reply(caption, {
+  // текстовый fallback
+  const extraText = {
     parse_mode: "Markdown",
-    ...(keyboard ? keyboard : {}),
-  });
+    ...(keyboard?.reply_markup ? { reply_markup: keyboard.reply_markup } : {}),
+  };
+  return ctx.reply(caption, extraText);
 };
 
 // ----- defaults for new category -----
 const defaultCategoryData = () => ({
+  layoutVariant: null,
   key: "",
   title: "",
   badgeText: "",
@@ -144,6 +141,33 @@ const TITLE_CLASS_OPTIONS = [
   { label: "сверху", value: "cardTitle2" },
 ];
 
+// ===== 4 готовых варианта карточки категории =====
+const CATEGORY_VARIANTS = [
+  {
+    id: 1,
+    label: "ВАРИАНТ 1",
+    value: { layoutVariant: 1, classCardDuck: "cardImageLeft", titleClass: "cardTitle", showOverlay: true },
+  },
+  {
+    id: 2,
+    label: "ВАРИАНТ 2",
+    value: { layoutVariant: 2, classCardDuck: "cardImageRight", titleClass: "cardTitle2", showOverlay: false },
+  },
+  {
+    id: 3,
+    label: "ВАРИАНТ 3",
+    value: { layoutVariant: 3, classCardDuck: "cardImageLeft2", titleClass: "cardTitle2", showOverlay: false },
+  },
+  {
+    id: 4,
+    label: "ВАРИАНТ 4",
+    value: { layoutVariant: 4, classCardDuck: "cardImageRight2", titleClass: "cardTitle", showOverlay: true },
+  },
+];
+
+const getVariantLabel = (v) =>
+  CATEGORY_VARIANTS.find((x) => x.id === v)?.label || (v ? `ВАРИАНТ ${v}` : "—");
+
 const getDuckLabel = (value) =>
   DUCK_CLASS_OPTIONS.find((o) => o.value === value)?.label || value || "—";
 
@@ -155,6 +179,7 @@ const renderCategoryPreview = (d) => {
   const lines = [];
   lines.push("🧩 *Конструктор категории — превью*");
   lines.push("");
+  lines.push(`• вариант: *${getVariantLabel(d.layoutVariant)}*`);
   lines.push(`• key: \`${d.key || "—"}\``);
   lines.push(`• title: *${d.title || "—"}*`);
   lines.push(`• badgeText: ${d.badgeText ? `*${d.badgeText}*` : "—"}`);
@@ -244,6 +269,23 @@ const askStep = async (ctx) => {
   // Текст вопроса для каждого шага
   let question = "";
 
+  if (step === "variant") {
+    const caption = `${preview}\n\nВыберите *вариант карточки* (готовая разметка):`;
+    const kb = Markup.inlineKeyboard([
+      [
+        Markup.button.callback("ВАРИАНТ 1", "cat_builder_set_variant:1"),
+        Markup.button.callback("ВАРИАНТ 2", "cat_builder_set_variant:2"),
+      ],
+      [
+        Markup.button.callback("ВАРИАНТ 3", "cat_builder_set_variant:3"),
+        Markup.button.callback("ВАРИАНТ 4", "cat_builder_set_variant:4"),
+      ],
+      [Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.variant, caption, keyboard: kb });
+  }
+
   if (step === "key") {
     question = "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`";
   } else if (step === "title") {
@@ -261,6 +303,28 @@ const askStep = async (ctx) => {
     question = isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?";
   }
 
+  if (step === "assetsAndTitle") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*ссылка_на_фон, ссылка_на_утку, название категории*\n\n` +
+      `Пример:\nhttps://...bg.png, https://...duck.png, ЖИДКОСТИ`;
+
+    const kb = builderNavKeyboard(st.step);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.assetsAndTitle, caption, keyboard: kb });
+  }
+
+  if (step === "badge") {
+    const caption = `${preview}\n\nХотите добавить бейдж?`;
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("SALE", "cat_builder_set_badge:SALE")],
+      [Markup.button.callback("NEW DROP", "cat_builder_set_badge:NEW DROP")],
+      [Markup.button.callback("НЕ ДОБАВЛЯТЬ", "cat_builder_set_badge:NONE")],
+      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.badge, caption, keyboard: kb });
+  }
+
   // Кнопочные шаги оставим как есть (там inline keyboard да/нет)
   // но превью всё равно можно отправить одним сообщением (см. ниже)
 
@@ -273,44 +337,44 @@ const askStep = async (ctx) => {
     return sendStepCard(ctx, { photoUrl, caption, keyboard: navKb });
   }
 
-  // Для кнопочных шагов — тоже можно сделать 1 сообщение:
-  if (step === "showOverlay") {
-    const caption = `${preview}\n\nНужно ли затемнение (overlay)?`;
-    const kb = Markup.inlineKeyboard([
-      [Markup.button.callback("✅ Да", "cat_builder_set_showOverlay:true")],
-      [Markup.button.callback("❌ Нет", "cat_builder_set_showOverlay:false")],
-      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
-    ]);
-    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
-  }
+  // // Для кнопочных шагов — тоже можно сделать 1 сообщение:
+  // if (step === "showOverlay") {
+  //   const caption = `${preview}\n\nНужно ли затемнение (overlay)?`;
+  //   const kb = Markup.inlineKeyboard([
+  //     [Markup.button.callback("✅ Да", "cat_builder_set_showOverlay:true")],
+  //     [Markup.button.callback("❌ Нет", "cat_builder_set_showOverlay:false")],
+  //     [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+  //   ]);
+  //   return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
+  // }
 
-  if (step === "classCardDuck") {
-    const caption = `${preview}\n\nВыберите позицию/класс утки:`;
-    const kb = Markup.inlineKeyboard([
-      ...DUCK_CLASS_OPTIONS.map((o) => [
-        Markup.button.callback(o.label, `cat_builder_set_classCardDuck:${o.value}`),
-      ]),
-      [
-        Markup.button.callback("⬅️ Назад", "cat_builder_back"),
-        Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
-      ],
-    ]);
-    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
-  }
+  // if (step === "classCardDuck") {
+  //   const caption = `${preview}\n\nВыберите позицию/класс утки:`;
+  //   const kb = Markup.inlineKeyboard([
+  //     ...DUCK_CLASS_OPTIONS.map((o) => [
+  //       Markup.button.callback(o.label, `cat_builder_set_classCardDuck:${o.value}`),
+  //     ]),
+  //     [
+  //       Markup.button.callback("⬅️ Назад", "cat_builder_back"),
+  //       Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
+  //     ],
+  //   ]);
+  //   return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
+  // }
 
-  if (step === "titleClass") {
-    const caption = `${preview}\n\nВыберите стиль заголовка:`;
-    const kb = Markup.inlineKeyboard([
-      ...TITLE_CLASS_OPTIONS.map((o) => [
-        Markup.button.callback(o.label, `cat_builder_set_titleClass:${o.value}`),
-      ]),
-      [
-        Markup.button.callback("⬅️ Назад", "cat_builder_back"),
-        Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
-      ],
-    ]);
-    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
-  }
+  // if (step === "titleClass") {
+  //   const caption = `${preview}\n\nВыберите стиль заголовка:`;
+  //   const kb = Markup.inlineKeyboard([
+  //     ...TITLE_CLASS_OPTIONS.map((o) => [
+  //       Markup.button.callback(o.label, `cat_builder_set_titleClass:${o.value}`),
+  //     ]),
+  //     [
+  //       Markup.button.callback("⬅️ Назад", "cat_builder_back"),
+  //       Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
+  //     ],
+  //   ]);
+  //   return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
+  // }
 
   if (step === "isActive") {
     const caption = `${preview}\n\nКатегория активна?`;
@@ -442,6 +506,40 @@ bot.action("cat_edit_open_wizard", async (ctx) => {
   });
 
   return askStep(ctx);
+});
+
+bot.action(/cat_builder_set_variant:(1|2|3|4)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  const id = Number(ctx.match[1]);
+  const preset = CATEGORY_VARIANTS.find((v) => v.id === id);
+  if (!preset) return;
+
+  st.data.layoutVariant = id;
+  st.data.classCardDuck = preset.value.classCardDuck;
+  st.data.titleClass = preset.value.titleClass;
+  st.data.showOverlay = preset.value.showOverlay;
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+bot.action(/cat_builder_set_badge:(SALE|NEW DROP|NONE)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  const v = ctx.match[1];
+  st.data.badgeText = v === "NONE" ? "" : v;
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
 });
 
 bot.action("cat_edit_toggle_isActive", async (ctx) => {
@@ -854,36 +952,59 @@ bot.on("text", async (ctx) => {
     return nextStep(ctx);
   }
 
+  if (step === "assetsAndTitle") {
+  const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
+
+  if (parts.length < 3) {
+    return ctx.reply("❌ Формат неверный. Нужно так: ссылка_на_фон, ссылка_на_утку, название категории");
+  }
+
+  const bg = parts[0];
+  const duck = parts[1];
+  const title = parts.slice(2).join(", ");
+
+  if (!isValidUrl(bg)) return ctx.reply("❌ Первая часть должна быть ссылкой на фон (https://...)");
+  if (!isValidUrl(duck)) return ctx.reply("❌ Вторая часть должна быть ссылкой на утку (https://...)");
+  if (title.length < 2) return ctx.reply("❌ Слишком короткое название категории");
+
+  st.data.cardBgUrl = bg;
+  st.data.cardDuckUrl = duck;
+  st.data.title = title;
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+}
+
   // title
-  if (step === "title") {
-    if (text.length < 2) return ctx.reply("❌ Слишком короткий title");
-    st.data.title = text;
-    setState(ctx.chat.id, st);
-    return nextStep(ctx);
-  }
+  // if (step === "title") {
+  //   if (text.length < 2) return ctx.reply("❌ Слишком короткий title");
+  //   st.data.title = text;
+  //   setState(ctx.chat.id, st);
+  //   return nextStep(ctx);
+  // }
 
-  // badgeText
-  if (step === "badgeText") {
-    st.data.badgeText = text === "-" ? "" : text;
-    setState(ctx.chat.id, st);
-    return nextStep(ctx);
-  }
+  // // badgeText
+  // if (step === "badgeText") {
+  //   st.data.badgeText = text === "-" ? "" : text;
+  //   setState(ctx.chat.id, st);
+  //   return nextStep(ctx);
+  // }
 
-  // cardBgUrl
-  if (step === "cardBgUrl") {
-    if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
-    st.data.cardBgUrl = text === "-" ? "" : text;
-    setState(ctx.chat.id, st);
-    return nextStep(ctx);
-  }
+  // // cardBgUrl
+  // if (step === "cardBgUrl") {
+  //   if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
+  //   st.data.cardBgUrl = text === "-" ? "" : text;
+  //   setState(ctx.chat.id, st);
+  //   return nextStep(ctx);
+  // }
 
-  // cardDuckUrl
-  if (step === "cardDuckUrl") {
-    if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
-    st.data.cardDuckUrl = text === "-" ? "" : text;
-    setState(ctx.chat.id, st);
-    return nextStep(ctx);
-  }
+  // // cardDuckUrl
+  // if (step === "cardDuckUrl") {
+  //   if (text !== "-" && !isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...) или `-`");
+  //   st.data.cardDuckUrl = text === "-" ? "" : text;
+  //   setState(ctx.chat.id, st);
+  //   return nextStep(ctx);
+  // }
 
   // sortOrder
   if (step === "sortOrder") {
