@@ -44,6 +44,45 @@ const api = async (path, options = {}) => {
 
 const isValidUrl = (s) => /^https?:\/\/\S+$/i.test(s);
 
+function translitRuToLat(input) {
+  const s = String(input || "").trim().toLowerCase();
+  const map = {
+    а:"a", б:"b", в:"v", г:"g", д:"d", е:"e", ё:"e", ж:"zh", з:"z", и:"i", й:"y",
+    к:"k", л:"l", м:"m", н:"n", о:"o", п:"p", р:"r", с:"s", т:"t", у:"u", ф:"f",
+    х:"h", ц:"ts", ч:"ch", ш:"sh", щ:"sch", ъ:"", ы:"y", ь:"", э:"e", ю:"yu", я:"ya",
+  };
+
+  let out = "";
+  for (const ch of s) {
+    if (map[ch] !== undefined) out += map[ch];
+    else if (/[a-z0-9]/.test(ch)) out += ch;
+    else out += "-";
+  }
+
+  out = out.replace(/-+/g, "-").replace(/^-+/, "").replace(/-+$/, "");
+  if (out.length < 2) out = "category";
+  if (out.length > 32) out = out.slice(0, 32).replace(/-+$/, "");
+  return out;
+}
+
+async function ensureUniqueCategoryKey(baseKey) {
+  let key = String(baseKey || "").trim();
+  if (!key) key = "category";
+
+  const exists0 = await Category.findOne({ key }, { _id: 1 }).lean();
+  if (!exists0) return key;
+
+  for (let i = 2; i <= 50; i++) {
+    const suffix = `-${i}`;
+    const cut = Math.max(0, 32 - suffix.length);
+    const candidate = `${key.slice(0, cut).replace(/-+$/, "")}${suffix}`;
+    const exists = await Category.findOne({ key: candidate }, { _id: 1 }).lean();
+    if (!exists) return candidate;
+  }
+
+  return `${key.slice(0, 24).replace(/-+$/, "")}-${Date.now().toString(36).slice(-6)}`;
+}
+
 // =====================================================
 // ====================== UI MENU =======================
 // =====================================================
@@ -69,7 +108,6 @@ const clearState = (chatId) => state.delete(String(chatId));
 // ----- Builder steps order -----
 const BUILDER_STEPS = [
   "variant",
-  "key",
   "assetsAndTitle",
   "badge",
   "sortOrder",
@@ -82,8 +120,6 @@ const CAT_STEP_IMAGES = {
   // ===== Категории: выбор варианта (схема 4 вариантов) =====
   // Можно переопределить через .env, чтобы легко менять картинку без правок кода
   variant: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreicopjyvhtoec43taajyah3rsb22hriuwm4mdiamilbbqztmfldmoe",
-  key: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreifg2pygkq5phcldy6maw36lcxv56my5bjebxwjrqdqbzlsnyyn3qq",
-  assetsAndTitle: "",
   title: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeieybamq3arkrfiq2r7xpzomjdusk4meyunyalfg44pjrh5yjrecty",
   badgeText: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeidjfskuf4rdoerl3blkkcvlcz5u5nzibxrqs2mjl7axjen65xbdhm",
   showOverlay: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeihyokn353keqwufizwwvxlviqcw2njrox4n72pgtlhhbphon64ydu",
@@ -184,7 +220,7 @@ const renderCategoryPreview = (d) => {
   lines.push("🧩 *Конструктор категории — превью*");
   lines.push("");
   lines.push(`• вариант: *${getVariantLabel(d.layoutVariant)}*`);
-  lines.push(`• key: \`${d.key || "—"}\``);
+  // lines.push(`• key: \`${d.key || "—"}\``);
   lines.push(`• title: *${d.title || "—"}*`);
   lines.push(`• badgeText: ${d.badgeText ? `*${d.badgeText}*` : "—"}`);
   lines.push(`• badgeSide: *${d.badgeText ? (d.badgeSide || "left") : "—"}*`);
@@ -291,14 +327,14 @@ const askStep = async (ctx) => {
     return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.variant, caption, keyboard: kb });
   }
 
-  if (step === "key") {
-    question = "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`";
-  } else if (step === "sortOrder") {
-    question = "Введите *порядок в сетке* (0,1,2...)";
-  } else if (step === "confirm") {
-    const isEdit = st?.mode === "cat_edit";
-    question = isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?";
-  }
+  // if (step === "key") {
+  //   question = "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`";
+  // } else if (step === "sortOrder") {
+  //   question = "Введите *порядок в сетке* (0,1,2...)";
+  // } else if (step === "confirm") {
+  //   const isEdit = st?.mode === "cat_edit";
+  //   question = isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?";
+  // }
 
   if (step === "assetsAndTitle") {
     const caption =
@@ -924,14 +960,14 @@ bot.on("text", async (ctx) => {
     const text = String(ctx.message.text || "").trim();
 
   // key
-  if (step === "key") {
-    if (!isValidKey(text)) {
-      return ctx.reply("❌ Неверный key. Формат: a-z, 0-9, дефис. 2-32 символа. Пример: liquids");
-    }
-    st.data.key = text;
-    setState(ctx.chat.id, st);
-    return nextStep(ctx);
-  }
+  // if (step === "key") {
+  //   if (!isValidKey(text)) {
+  //     return ctx.reply("❌ Неверный key. Формат: a-z, 0-9, дефис. 2-32 символа. Пример: liquids");
+  //   }
+  //   st.data.key = text;
+  //   setState(ctx.chat.id, st);
+  //   return nextStep(ctx);
+  // }
 
   if (step === "assetsAndTitle") {
   const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
@@ -951,6 +987,10 @@ bot.on("text", async (ctx) => {
   st.data.cardBgUrl = bg;
   st.data.cardDuckUrl = duck;
   st.data.title = title;
+
+  if (!st.data.key) {
+    st.data.key = translitRuToLat(st.data.title);
+  }
 
   setState(ctx.chat.id, st);
   return nextStep(ctx);
