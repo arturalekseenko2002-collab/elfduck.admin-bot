@@ -327,14 +327,12 @@ const askStep = async (ctx) => {
     return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.variant, caption, keyboard: kb });
   }
 
-  // if (step === "key") {
-  //   question = "Введите *key* категории (латиница/цифры/дефис), пример: `liquids` или `disposables`";
-  // } else if (step === "sortOrder") {
-  //   question = "Введите *порядок в сетке* (0,1,2...)";
-  // } else if (step === "confirm") {
-  //   const isEdit = st?.mode === "cat_edit";
-  //   question = isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?";
-  // }
+  if (step === "sortOrder") {
+    question = "Введите *порядок в сетке* (0,1,2...)";
+  } else if (step === "confirm") {
+    const isEdit = st?.mode === "cat_edit";
+    question = isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?";
+  }
 
   if (step === "assetsAndTitle") {
     const caption =
