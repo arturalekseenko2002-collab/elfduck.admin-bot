@@ -72,6 +72,7 @@ const mainMenu = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback("➕ Создать категорию (конструктор)", "cat_builder_start")],
     [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
+    [Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start")],
     [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
@@ -203,6 +204,246 @@ const renderProductPreview = (d) => {
   lines.push(`• sortOrder: *${d.sortOrder}*`);
   lines.push(`• isActive: *${d.isActive ? "true" : "false"}*`);
   return lines.join("\n");
+};
+
+// =====================================================
+// =================== FLAVOR BUILDER ==================
+// =====================================================
+
+const SUPER_ADMIN_IDS = (process.env.SUPER_ADMIN_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const isSuperAdmin = (ctx) => SUPER_ADMIN_IDS.includes(String(ctx.from?.id || ""));
+
+const slugify = (s) =>
+  String(s || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 32) || "flavor";
+
+const isHex = (s) => /^#[0-9a-fA-F]{6}$/.test(String(s || "").trim());
+
+const FL_BUILDER_STEPS = [
+  "product",      // выбрать товар
+  "mode",         // новый вкус или наличие существующего
+  "newFlavor",    // ввод label + 2 цвета
+  "pickFlavor",   // выбрать существующий вкус
+  "pickupPoint",  // выбрать точку
+  "qty",          // ввести количество
+  "confirm",      // подтвердить
+];
+
+const defaultFlavorBuilderData = () => ({
+  productId: "",
+  productTitle: "",
+
+  mode: "", // "new" | "stock"
+
+  // flavor meta
+  flavorId: "",
+  flavorKey: "",
+  label: "",
+  gradient: ["", ""],
+
+  // stock target
+  pickupPointId: "",
+  pickupPointLabel: "",
+
+  totalQty: 0,
+});
+
+const renderFlavorBuilderPreview = (d) => {
+  const lines = [];
+  lines.push("🍓 *Вкусы / наличие — превью*");
+  lines.push("");
+  lines.push(`• товар: *${d.productTitle || "—"}*`);
+  lines.push(`• режим: *${d.mode === "new" ? "добавить новый вкус" : d.mode === "stock" ? "обновить наличие" : "—"}*`);
+  lines.push(`• вкус: *${d.label || "—"}*`);
+  lines.push(`• цвета: ${d.gradient?.[0] && d.gradient?.[1] ? `\`${d.gradient[0]}\`, \`${d.gradient[1]}\`` : "—"}`);
+  lines.push(`• точка: *${d.pickupPointLabel || "—"}*`);
+  lines.push(`• количество: *${Number(d.totalQty || 0)}*`);
+  return lines.join("\n");
+};
+
+// Доступные точки для менеджера:
+// - супер-админ видит все
+// - обычный менеджер видит только точки где его telegramId в allowedAdminTelegramIds
+const fetchMyPickupPoints = async (ctx) => {
+  const r = await fetch(`${API_URL}/pickup-points?active=0`);
+  const data = await r.json().catch(() => ({}));
+  const points = data.pickupPoints || [];
+  const myId = String(ctx.from?.id || "");
+
+  if (isSuperAdmin(ctx)) return points;
+
+  return points.filter((p) =>
+    Array.isArray(p.allowedAdminTelegramIds) && p.allowedAdminTelegramIds.includes(myId)
+  );
+};
+
+const askFlavorStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const step = FL_BUILDER_STEPS[st.step];
+  const d = st.data || {};
+  const preview = renderFlavorBuilderPreview(d);
+
+  // 1) выбрать товар
+  if (step === "product") {
+    const r = await fetch(`${API_URL}/products?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const products = data.products || [];
+
+    if (!products.length) {
+      clearState(ctx.chat.id);
+      return ctx.reply("Товаров пока нет. Сначала создай товар.", mainMenu());
+    }
+
+    const kb = Markup.inlineKeyboard([
+      ...products
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map((p) => [
+          Markup.button.callback(
+            `${p.isActive ? "✅" : "⛔️"} ${(p.title1 || "").trim()} ${(p.title2 || "").trim()}`.trim(),
+            `fl_pick_product:${p._id}`
+          ),
+        ]),
+      [Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nВыберите *товар*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 2) режим
+  if (step === "mode") {
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("➕ Добавить новый вкус", "fl_set_mode:new")],
+      [Markup.button.callback("📦 Обновить наличие существующего", "fl_set_mode:stock")],
+      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nВыберите *что делаем*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 3) новый вкус: ввод label + цвета
+  if (step === "newFlavor") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*название вкуса, #ЦВЕТ1, #ЦВЕТ2*\n\n` +
+      `Пример:\nCool Menthol, #92B8CB, #31460E`;
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+      ]),
+    });
+  }
+
+  // 4) выбрать существующий вкус
+  if (step === "pickFlavor") {
+    // грузим товар, чтобы взять актуальные flavors
+    const r = await fetch(`${API_URL}/products?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const products = data.products || [];
+    const prod = products.find((p) => String(p._id) === String(d.productId));
+
+    const flavors = (prod?.flavors || []).filter((f) => f.isActive !== false);
+
+    if (!flavors.length) {
+      // если вкусов нет — отправим в newFlavor
+      st.step = FL_BUILDER_STEPS.indexOf("newFlavor");
+      st.data.mode = "new";
+      setState(ctx.chat.id, st);
+      return askFlavorStep(ctx);
+    }
+
+    const kb = Markup.inlineKeyboard([
+      ...flavors.map((f) => [
+        Markup.button.callback(f.label || f.flavorKey, `fl_pick_flavor:${f._id}`),
+      ]),
+      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nВыберите *вкус*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 5) выбрать точку
+  if (step === "pickupPoint") {
+    const points = await fetchMyPickupPoints(ctx);
+
+    if (!points.length) {
+      return ctx.reply("❌ У тебя нет доступных точек самовывоза. Добавь свой telegramId в точку (allowedAdminTelegramIds).");
+    }
+
+    const kb = Markup.inlineKeyboard([
+      ...points
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map((p) => [
+          // ⚡️ тут можно показывать только адрес
+          Markup.button.callback(`${p.isActive ? "✅" : "⛔️"} ${p.address || "Без адреса"}`, `fl_pick_point:${p._id}`),
+        ]),
+      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nВыберите *точку самовывоза*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 6) qty
+  if (step === "qty") {
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nВведите *количество* (число 0+):`,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+      ]),
+    });
+  }
+
+  // 7) confirm
+  if (step === "confirm") {
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Сохранить", "fl_confirm")],
+      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nПодтвердить сохранение?`,
+      keyboard: kb,
+    });
+  }
+};
+
+const nextFlavorStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  st.step += 1;
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
 };
 
 const productNavKeyboard = (stepIndex) => {
@@ -1243,6 +1484,187 @@ bot.on("text", async (ctx, next) => {
   }
 });
 
+// =====================================================
+// ================== FLAVOR BUILDER ACTIONS ============
+// =====================================================
+
+bot.action("fl_builder_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "fl_builder",
+    step: 0,
+    data: defaultFlavorBuilderData(),
+  });
+
+  return askFlavorStep(ctx);
+});
+
+bot.action("fl_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("Ок, отменил.", mainMenu());
+});
+
+bot.action("fl_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action(/fl_pick_product:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const productId = String(ctx.match[1] || "");
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  // найдём title для превью
+  const r = await fetch(`${API_URL}/products?active=0`);
+  const data = await r.json().catch(() => ({}));
+  const products = data.products || [];
+  const prod = products.find((p) => String(p._id) === productId);
+
+  st.data.productId = productId;
+  st.data.productTitle = prod ? `${prod.title1 || ""} ${prod.title2 || ""}`.trim() : productId;
+
+  setState(ctx.chat.id, st);
+  return nextFlavorStep(ctx);
+});
+
+bot.action(/fl_set_mode:(new|stock)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const mode = String(ctx.match[1]);
+  st.data.mode = mode;
+
+  // если new -> шаг newFlavor, если stock -> шаг pickFlavor
+  st.step = mode === "new"
+    ? FL_BUILDER_STEPS.indexOf("newFlavor")
+    : FL_BUILDER_STEPS.indexOf("pickFlavor");
+
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action(/fl_pick_flavor:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const flavorId = String(ctx.match[1] || "");
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  // подцепим label/gradient чтобы показывать в превью
+  const r = await fetch(`${API_URL}/products?active=0`);
+  const data = await r.json().catch(() => ({}));
+  const products = data.products || [];
+  const prod = products.find((p) => String(p._id) === String(st.data.productId));
+  const fl = (prod?.flavors || []).find((f) => String(f._id) === flavorId);
+
+  st.data.flavorId = flavorId;
+  st.data.label = fl?.label || "";
+  st.data.flavorKey = fl?.flavorKey || "";
+  st.data.gradient = Array.isArray(fl?.gradient) ? fl.gradient : ["", ""];
+
+  // дальше — точка
+  st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action(/fl_pick_point:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const points = await fetchMyPickupPoints(ctx);
+  const p = points.find((x) => String(x._id) === id);
+
+  st.data.pickupPointId = id;
+  st.data.pickupPointLabel = p?.address || "—";
+
+  // дальше qty
+  st.step = FL_BUILDER_STEPS.indexOf("qty");
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action("fl_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  try {
+    const d = st.data;
+
+    if (!d.productId) throw new Error("Не выбран товар");
+    if (!d.pickupPointId) throw new Error("Не выбрана точка");
+    if (!Number.isFinite(Number(d.totalQty)) || Number(d.totalQty) < 0) throw new Error("Некорректное количество");
+
+    let flavorId = d.flavorId;
+
+    // 1) если новый вкус — создаём вкус
+    if (d.mode === "new") {
+      if (!d.label) throw new Error("Нет названия вкуса");
+      if (!isHex(d.gradient?.[0]) || !isHex(d.gradient?.[1])) throw new Error("Цвета должны быть #RRGGBB");
+
+      const flavorKey = d.flavorKey || slugify(d.label);
+
+      const created = await api(`/admin/products/${d.productId}/flavors`, {
+        method: "POST",
+        body: JSON.stringify({
+          flavorKey,
+          label: d.label,
+          gradient: [d.gradient[0], d.gradient[1]],
+          isActive: true,
+        }),
+      });
+
+      const prod = created.product || created?.data?.product || created; // на всякий
+      const found = (prod.flavors || []).find((f) => String(f.flavorKey) === String(flavorKey));
+      if (!found?._id) throw new Error("Не смог найти созданный вкус в ответе сервера");
+      flavorId = String(found._id);
+    }
+
+    if (!flavorId) throw new Error("Не выбран вкус");
+
+    // 2) выставляем остаток по точке
+    await api(`/admin/products/${d.productId}/flavors/${flavorId}/stock`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        pickupPointId: d.pickupPointId,
+        totalQty: Number(d.totalQty),
+        updatedByTelegramId: String(ctx.from?.id || ""),
+      }),
+    });
+
+    clearState(ctx.chat.id);
+    return ctx.reply("✅ Готово! Вкус/наличие сохранены.", mainMenu());
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
 // ==================== CATEGORY EDIT ===================
 
 bot.action("cat_edit_start", async (ctx) => {
@@ -1753,6 +2175,51 @@ bot.on("text", async (ctx) => {
         }
 
         return ctx.reply("❌ Неожиданный шаг. Нажми Отмена и попробуй снова.");
+      } catch (e) {
+        return ctx.reply(`❌ ${e.message}`);
+      }
+    }
+
+    // ===== Text handler for FLAVOR BUILDER =====
+    if (st && st.mode === "fl_builder") {
+      const step = FL_BUILDER_STEPS[st.step];
+      const text = String(ctx.message?.text || "").trim();
+
+      try {
+        // new flavor input: "label, #HEX1, #HEX2"
+        if (step === "newFlavor") {
+          const parts = text.split(",").map((s) => s.trim());
+          if (parts.length < 3) throw new Error("Нужно: название, #ЦВЕТ1, #ЦВЕТ2");
+
+          const label = parts[0];
+          const c1 = parts[1];
+          const c2 = parts[2];
+
+          if (label.length < 2) throw new Error("Слишком короткое название вкуса");
+          if (!isHex(c1) || !isHex(c2)) throw new Error("Цвета должны быть в формате #RRGGBB");
+
+          st.data.label = label;
+          st.data.gradient = [c1, c2];
+          st.data.flavorKey = slugify(label);
+
+          // дальше — выбор точки
+          st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
+          setState(ctx.chat.id, st);
+          return askFlavorStep(ctx);
+        }
+
+        // qty
+        if (step === "qty") {
+          const n = Number(text.replace(/\s+/g, ""));
+          if (!Number.isFinite(n) || n < 0) throw new Error("Количество должно быть числом 0+");
+
+          st.data.totalQty = n;
+          st.step = FL_BUILDER_STEPS.indexOf("confirm");
+          setState(ctx.chat.id, st);
+          return askFlavorStep(ctx);
+        }
+
+        return next?.();
       } catch (e) {
         return ctx.reply(`❌ ${e.message}`);
       }
