@@ -432,9 +432,40 @@ const askFlavorStep = async (ctx) => {
 
   // 6) qty
   if (step === "qty") {
+    // показываем текущее количество по выбранному вкусу на выбранной точке
+    let currentQty = 0;
+
+    try {
+      const r = await fetch(`${API_URL}/products?active=0`);
+      const data = await r.json().catch(() => ({}));
+      const products = data.products || [];
+
+      const prod = products.find((p) => String(p._id) === String(d.productId));
+
+      if (prod) {
+        // вкус может быть выбран по _id (flavorId) или по flavorKey
+        const flavor =
+          (prod.flavors || []).find((f) => String(f._id) === String(d.flavorId)) ||
+          (prod.flavors || []).find((f) => String(f.flavorKey) === String(d.flavorKey));
+
+        if (flavor) {
+          const row = (flavor.stockByPickupPoint || []).find(
+            (s) => String(s.pickupPointId) === String(d.pickupPointId)
+          );
+          currentQty = Number(row?.totalQty || 0);
+        }
+      }
+    } catch (e) {
+      // не ломаем шаг — просто покажем 0
+      currentQty = 0;
+    }
+
     return sendStepCard(ctx, {
       photoUrl: "",
-      caption: `${preview}\n\nВведите *количество* (число 0+):`,
+      caption:
+        `${preview}\n\n` +
+        `Текущее количество на точке: *${currentQty}*\n\n` +
+        `Введите *количество* (число 0+):`,
       keyboard: Markup.inlineKeyboard([
         [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
       ]),
