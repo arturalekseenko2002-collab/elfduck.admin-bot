@@ -254,19 +254,36 @@ const defaultFlavorBuilderData = () => ({
   pickupPointId: "",
   pickupPointLabel: "",
 
-  totalQty: 0,
+  totalQty: null,
 });
 
-const renderFlavorBuilderPreview = (d) => {
+const renderFlavorBuilderPreview = (d = {}) => {
   const lines = [];
-  lines.push("🍓 *Вкусы / наличие — превью*");
-  lines.push("");
-  lines.push(`• товар: *${d.productTitle || "—"}*`);
-  lines.push(`• режим: *${d.mode === "new" ? "добавить новый вкус" : d.mode === "stock" ? "обновить наличие" : "—"}*`);
-  lines.push(`• вкус: *${d.label || "—"}*`);
-  lines.push(`• цвета: ${d.gradient?.[0] && d.gradient?.[1] ? `\`${d.gradient[0]}\`, \`${d.gradient[1]}\`` : "—"}`);
-  lines.push(`• точка: *${d.pickupPointLabel || "—"}*`);
-  lines.push(`• количество: *${Number(d.totalQty || 0)}*`);
+  lines.push("🍓 *Вкусы / наличие*");
+
+  // показываем ТОЛЬКО заполненное (без “—”)
+  if (d.productTitle) lines.push(`\nТовар: *${String(d.productTitle)}*`);
+
+  if (d.mode) {
+    const modeLabel =
+      d.mode === "new" ? "добавить новый вкус" :
+      d.mode === "stock" ? "обновить наличие" : "";
+    if (modeLabel) lines.push(`Действие: *${modeLabel}*`);
+  }
+
+  if (d.label) lines.push(`Вкус: *${String(d.label)}*`);
+
+  if (Array.isArray(d.gradient) && d.gradient[0] && d.gradient[1]) {
+    lines.push(`Цвета: \`${d.gradient[0]}\`, \`${d.gradient[1]}\``);
+  }
+
+  if (d.pickupPointLabel) lines.push(`Точка: *${String(d.pickupPointLabel)}*`);
+
+  // qty показываем только если реально вводили
+  if (typeof d.totalQty === "number") {
+    lines.push(`Количество: *${d.totalQty}*`);
+  }
+
   return lines.join("\n");
 };
 
@@ -319,7 +336,7 @@ const askFlavorStep = async (ctx) => {
 
     return sendStepCard(ctx, {
       photoUrl: "",
-      caption: `${preview}\n\nВыберите *товар*:`,
+      caption: `Выберите *товар*:`,
       keyboard: kb,
     });
   }
@@ -328,13 +345,13 @@ const askFlavorStep = async (ctx) => {
   if (step === "mode") {
     const kb = Markup.inlineKeyboard([
       [Markup.button.callback("➕ Добавить новый вкус", "fl_set_mode:new")],
-      [Markup.button.callback("📦 Обновить наличие существующего", "fl_set_mode:stock")],
+      [Markup.button.callback("📦 Добавить наличие", "fl_set_mode:stock")],
       [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
     ]);
 
     return sendStepCard(ctx, {
       photoUrl: "",
-      caption: `${preview}\n\nВыберите *что делаем*:`,
+      caption: `Выберите *что делаем*:`,
       keyboard: kb,
     });
   }
