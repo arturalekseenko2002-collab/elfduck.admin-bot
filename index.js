@@ -72,6 +72,7 @@ const mainMenu = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback("➕ Создать категорию (конструктор)", "cat_builder_start")],
     [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
+    [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
   ]);
@@ -474,6 +475,121 @@ const renderCategoryPreview = (d) => {
   return lines.join("\n");
 };
 
+// =====================================================
+// =================== PICKUP POINTS ===================
+// =====================================================
+
+const renderPickupPointPreview = (p) => {
+  const lines = [];
+  lines.push("🏪 *Точка самовывоза — превью*");
+  lines.push("");
+  lines.push(`• название: *${p?.title || "—"}*`);
+  lines.push(`• адрес: *${p?.address || "—"}*`);
+  lines.push(
+    `• менеджеры (ID): ${
+      Array.isArray(p?.allowedAdminTelegramIds) && p.allowedAdminTelegramIds.length
+        ? p.allowedAdminTelegramIds.join(", ")
+        : "—"
+    }`
+  );
+  lines.push(`• sortOrder: *${Number(p?.sortOrder ?? 0)}*`);
+  lines.push(`• isActive: *${p?.isActive ? "true" : "false"}*`);
+  return lines.join("\n");
+};
+
+const ppMenuKeyboard = (id) =>
+  Markup.inlineKeyboard([
+    [
+      Markup.button.callback("🟢/🔴 Вкл/Выкл", `pp_toggle:${id}`),
+      Markup.button.callback("🗑 Удалить", `pp_delete:${id}`),
+    ],
+    [
+      Markup.button.callback("📝 Название", `pp_prompt:title:${id}`),
+      Markup.button.callback("📍 Адрес", `pp_prompt:address:${id}`),
+    ],
+    [Markup.button.callback("👤 ID менеджеров", `pp_prompt:allowedAdminTelegramIds:${id}`)],
+    [Markup.button.callback("🔢 sortOrder", `pp_prompt:sortOrder:${id}`)],
+    [Markup.button.callback("⬅️ К списку", "pp_list")],
+    [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+  ]);
+
+const ppListKeyboard = (points = []) =>
+  Markup.inlineKeyboard([
+    ...points
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((p) => [
+        Markup.button.callback(
+          `${p.isActive ? "✅" : "⛔️"} ${p.title || p.address || "(без названия)"}`,
+          `pp_open:${p._id}`
+        ),
+      ]),
+    [Markup.button.callback("➕ Создать точку", "pp_create")],
+    [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+  ]);
+
+const askPickupCreateStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+
+  const step = Number(st.step || 0);
+
+  // step 0: title,address
+  if (step === 0) {
+    const caption =
+      "🏪 *Создание точки самовывоза*\n\n" +
+      "Отправь *одним сообщением* через запятую:\n" +
+      "*название, адрес*\n\n" +
+      "Пример:\nKrucza, ul. Krucza 03, Śródmieście";
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([[Markup.button.callback("✖️ Отмена", "pp_cancel")]]),
+    });
+  }
+
+  // step 1: managers ids
+  if (step === 1) {
+    const d = st.data || {};
+    const caption =
+      `${renderPickupPointPreview(d)}\n\n` +
+      "Вставь *ID менеджеров* через запятую (telegramId).\n" +
+      "Если никого не добавлять — отправь `-`.\n\n" +
+      "Пример:\n123456789, 987654321";
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "pp_back"), Markup.button.callback("✖️ Отмена", "pp_cancel")],
+      ]),
+    });
+  }
+
+  // step 2: confirm
+  if (step === 2) {
+    const d = st.data || {};
+    const caption = `${renderPickupPointPreview(d)}\n\n*Вопрос:*\nПодтвердить создание точки?`;
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Создать", "pp_create_confirm")],
+        [Markup.button.callback("⬅️ Назад", "pp_back"), Markup.button.callback("✖️ Отмена", "pp_cancel")],
+      ]),
+    });
+  }
+};
+
+const nextPickupCreateStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+  st.step = Number(st.step || 0) + 1;
+  setState(ctx.chat.id, st);
+  return askPickupCreateStep(ctx);
+};
+
 // ----- quick edit menu (no wizard) -----
 const renderEditMenuText = (d) => {
   const lines = [];
@@ -666,6 +782,214 @@ bot.start(async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔️ Нет доступа");
   clearState(ctx.chat.id);
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu());
+});
+
+// =====================================================
+// =================== PICKUP POINTS CRUD ==============
+// =====================================================
+
+bot.action("pp_list", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  try {
+    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const points = data?.pickupPoints || (Array.isArray(data) ? data : []);
+
+    if (!points.length) {
+      return ctx.reply(
+        "Точек самовывоза пока нет.",
+        Markup.inlineKeyboard([
+          [Markup.button.callback("➕ Создать точку", "pp_create")],
+          [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+        ])
+      );
+    }
+
+    return ctx.reply("🏪 *Точки самовывоза:*", {
+      parse_mode: "Markdown",
+      reply_markup: ppListKeyboard(points).reply_markup,
+    });
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action("pp_create", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "pp_create",
+    step: 0,
+    data: {
+      title: "",
+      address: "",
+      sortOrder: 0,
+      isActive: true,
+      allowedAdminTelegramIds: [],
+    },
+  });
+
+  return askPickupCreateStep(ctx);
+});
+
+bot.action("pp_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("Ок, отменено.", mainMenu());
+});
+
+bot.action("pp_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+  return askPickupCreateStep(ctx);
+});
+
+bot.action("pp_create_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+
+  try {
+    const d = st.data || {};
+    if (!String(d.title || "").trim() && !String(d.address || "").trim()) {
+      throw new Error("Нужно указать хотя бы название или адрес");
+    }
+
+    const payload = {
+      title: String(d.title || "").trim(),
+      address: String(d.address || "").trim(),
+      sortOrder: Number(d.sortOrder || 0),
+      isActive: d.isActive !== false,
+      allowedAdminTelegramIds: Array.isArray(d.allowedAdminTelegramIds)
+        ? d.allowedAdminTelegramIds.map((x) => String(x).trim()).filter(Boolean)
+        : [],
+    };
+
+    await api("/admin/pickup-points", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    clearState(ctx.chat.id);
+    return ctx.reply(
+      "✅ Точка создана",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("🏪 К списку точек", "pp_list")],
+        [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+      ])
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action(/pp_open:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+
+  try {
+    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const points = data?.pickupPoints || (Array.isArray(data) ? data : []);
+    const p = points.find((x) => String(x._id) === id);
+
+    if (!p) return ctx.reply("Точка не найдена", mainMenu());
+
+    setState(ctx.chat.id, { mode: "pp_open", ppId: id, data: p });
+
+    return ctx.reply(renderPickupPointPreview(p), {
+      parse_mode: "Markdown",
+      reply_markup: ppMenuKeyboard(id).reply_markup,
+    });
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action(/pp_toggle:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+
+  try {
+    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const points = data?.pickupPoints || (Array.isArray(data) ? data : []);
+    const p = points.find((x) => String(x._id) === id);
+    if (!p) return ctx.reply("Точка не найдена", mainMenu());
+
+    const updated = await api(`/admin/pickup-points/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive: !p.isActive }),
+    });
+
+    const fresh = updated?.pickupPoint || updated;
+    setState(ctx.chat.id, { mode: "pp_open", ppId: id, data: fresh });
+
+    return ctx.reply(renderPickupPointPreview(fresh), {
+      parse_mode: "Markdown",
+      reply_markup: ppMenuKeyboard(id).reply_markup,
+    });
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action(/pp_delete:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+
+  try {
+    await api(`/admin/pickup-points/${id}`, { method: "DELETE" });
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      "🗑 Точка удалена",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("🏪 К списку точек", "pp_list")],
+        [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+      ])
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+  }
+});
+
+bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|sortOrder):(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const field = String(ctx.match[1] || "");
+  const id = String(ctx.match[2] || "");
+
+  setState(ctx.chat.id, { mode: "pp_prompt", field, ppId: id });
+
+  const prompts = {
+    title: "Введите новое *название* (или `-` чтобы отменить)",
+    address: "Введите новый *адрес* (или `-` чтобы отменить)",
+    allowedAdminTelegramIds: "Введите *ID менеджеров* через запятую (telegramId) (или `-` чтобы очистить/отменить)",
+    sortOrder: "Введите новый *sortOrder* (0,1,2...) (или `-` чтобы отменить)",
+  };
+
+  return ctx.reply(prompts[field] || "Введите новое значение", { parse_mode: "Markdown" });
 });
 
 // =====================================================
@@ -1398,6 +1722,97 @@ bot.on("text", async (ctx) => {
     const st = getState(ctx.chat.id);
     if (!st) return;
 
+    // ===== pickup points: create wizard =====
+    if (st.mode === "pp_create") {
+      const text = String(ctx.message.text || "").trim();
+      const step = Number(st.step || 0);
+
+      try {
+        if (step === 0) {
+          const parts = text.split(",").map((s) => s.trim()).filter(Boolean);
+          if (parts.length < 2) return ctx.reply("❌ Формат неверный. Нужно: название, адрес");
+
+          st.data.title = parts[0] || "";
+          st.data.address = parts.slice(1).join(", ");
+          setState(ctx.chat.id, st);
+          return nextPickupCreateStep(ctx);
+        }
+
+        if (step === 1) {
+          if (text === "-" || text.toLowerCase() === "нет") {
+            st.data.allowedAdminTelegramIds = [];
+          } else {
+            const ids = text.split(",").map((s) => s.trim()).filter(Boolean);
+            const bad = ids.find((x) => !/^\d+$/.test(x));
+            if (bad) return ctx.reply("❌ ID менеджера должен быть числом (telegramId). Пример: 123456789");
+            st.data.allowedAdminTelegramIds = ids;
+          }
+
+          setState(ctx.chat.id, st);
+          return nextPickupCreateStep(ctx);
+        }
+
+        return ctx.reply("❌ Неожиданный шаг. Нажми Отмена и попробуй снова.");
+      } catch (e) {
+        return ctx.reply(`❌ ${e.message}`);
+      }
+    }
+
+    // ===== pickup points: prompt edit =====
+    if (st.mode === "pp_prompt") {
+      const text = String(ctx.message.text || "").trim();
+
+      // cancel
+      if (text === "-") {
+        clearState(ctx.chat.id);
+        return ctx.reply(
+          "Ок.",
+          Markup.inlineKeyboard([
+            [Markup.button.callback("🏪 К списку точек", "pp_list")],
+            [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+          ])
+        );
+      }
+
+      const field = st.field;
+      const id = st.ppId;
+
+      try {
+        const patch = {};
+
+        if (field === "title") patch.title = text;
+        if (field === "address") patch.address = text;
+
+        if (field === "sortOrder") {
+          const n = Number(text);
+          if (!Number.isFinite(n) || n < 0) return ctx.reply("❌ sortOrder должен быть числом 0+");
+          patch.sortOrder = n;
+        }
+
+        if (field === "allowedAdminTelegramIds") {
+          const ids = text.split(",").map((s) => s.trim()).filter(Boolean);
+          const bad = ids.find((x) => !/^\d+$/.test(x));
+          if (bad) return ctx.reply("❌ ID менеджера должен быть числом (telegramId). Пример: 123456789");
+          patch.allowedAdminTelegramIds = ids;
+        }
+
+        const updated = await api(`/admin/pickup-points/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+
+        const fresh = updated?.pickupPoint || updated;
+        setState(ctx.chat.id, { mode: "pp_open", ppId: id, data: fresh });
+
+        return ctx.reply(renderPickupPointPreview(fresh), {
+          parse_mode: "Markdown",
+          reply_markup: ppMenuKeyboard(id).reply_markup,
+        });
+      } catch (e) {
+        return ctx.reply(`❌ Ошибка: ${e.message}`);
+      }
+    }
+
     // ===== quick edit prompt inputs =====
     if (st.mode === "cat_edit_prompt") {
     const field = st.field;
@@ -1518,4 +1933,4 @@ bot.on("text", async (ctx) => {
 // =====================================================
 // ===================== BOT START ======================
 // =====================================================
-bot.launch().then(() => console.log("✅ Admin bot launched"));
+bot.launch().then(() => console.log("✅ Admin bot launched")); 
