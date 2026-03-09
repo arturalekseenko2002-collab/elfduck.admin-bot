@@ -1120,6 +1120,7 @@ bot.action("pp_create", async (ctx) => {
       sortOrder: 0,
       isActive: true,
       allowedAdminTelegramIds: [],
+      notificationChatId: "",
     },
   });
 
@@ -1167,6 +1168,7 @@ bot.action("pp_create_confirm", async (ctx) => {
       allowedAdminTelegramIds: Array.isArray(d.allowedAdminTelegramIds)
         ? d.allowedAdminTelegramIds.map((x) => String(x).trim()).filter(Boolean)
         : [],
+      notificationChatId: String(d.notificationChatId || "").trim(),
     };
 
     await api("/admin/pickup-points", {
@@ -2312,6 +2314,10 @@ bot.on("text", async (ctx) => {
           const bad = ids.find((x) => !/^\d+$/.test(x));
           if (bad) return ctx.reply("❌ ID менеджера должен быть числом (telegramId). Пример: 123456789");
           patch.allowedAdminTelegramIds = ids;
+        }
+
+        if (field === "notificationChatId") {
+          patch.notificationChatId = text;
         }
 
         const updated = await api(`/admin/pickup-points/${id}`, {
