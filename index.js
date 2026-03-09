@@ -1264,7 +1264,7 @@ bot.action(/pp_delete:(.+)/, async (ctx) => {
   }
 });
 
-bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|sortOrder):(.+)/, async (ctx) => {
+bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|sortOrder):(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
 
@@ -1277,6 +1277,7 @@ bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|sortOrder):(.+)/, a
     title: "Введите новое *название* (или `-` чтобы отменить)",
     address: "Введите новый *адрес* (или `-` чтобы отменить)",
     allowedAdminTelegramIds: "Введите *ID менеджеров* через запятую (telegramId) (или `-` чтобы очистить/отменить)",
+    notificationChatId: "Введите *ID чата* для получения уведомлений о заказах",
     sortOrder: "Введите новый *sortOrder* (0,1,2...) (или `-` чтобы отменить)",
   };
 
