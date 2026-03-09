@@ -781,6 +781,7 @@ const renderPickupPointPreview = (p) => {
         : "—"
     }`
   );
+  lines.push(`• канал уведомлений: *${p?.notificationChatId || "—"}*`);
   lines.push(`• sortOrder: *${Number(p?.sortOrder ?? 0)}*`);
   lines.push(`• isActive: *${p?.isActive ? "true" : "false"}*`);
   return lines.join("\n");
@@ -797,6 +798,7 @@ const ppMenuKeyboard = (id) =>
       Markup.button.callback("📍 Адрес", `pp_prompt:address:${id}`),
     ],
     [Markup.button.callback("👤 ID менеджеров", `pp_prompt:allowedAdminTelegramIds:${id}`)],
+    [Markup.button.callback("🔔 ID канала уведомлений", `pp_prompt:notificationChatId:${id}`)],
     [Markup.button.callback("🔢 sortOrder", `pp_prompt:sortOrder:${id}`)],
     [Markup.button.callback("⬅️ К списку", "pp_list")],
     [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
