@@ -787,7 +787,9 @@ const renderPickupPointPreview = (p) => {
   lines.push(
     `• способы оплаты: ${
       pm.length
-        ? pm.map((m) => `${m.key}${m.isActive === false ? " (off)" : ""}`).join(", ")
+        ? pm
+            .map((m) => `\`${String(m.key || "").replace(/`/g, "")}${m.isActive === false ? " (off)" : ""}\``)
+            .join(", ")
         : "—"
     }`
   );
