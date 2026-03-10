@@ -782,6 +782,16 @@ const renderPickupPointPreview = (p) => {
     }`
   );
   lines.push(`• канал уведомлений: *${p?.notificationChatId || "—"}*`);
+
+  const pm = Array.isArray(p?.paymentConfig?.methods) ? p.paymentConfig.methods : [];
+  lines.push(
+    `• способы оплаты: ${
+      pm.length
+        ? pm.map((m) => `${m.key}${m.isActive === false ? " (off)" : ""}`).join(", ")
+        : "—"
+    }`
+  );
+
   lines.push(`• sortOrder: *${Number(p?.sortOrder ?? 0)}*`);
   lines.push(`• isActive: *${p?.isActive ? "true" : "false"}*`);
   return lines.join("\n");
@@ -799,9 +809,19 @@ const ppMenuKeyboard = (id) =>
     ],
     [Markup.button.callback("👤 ID менеджеров", `pp_prompt:allowedAdminTelegramIds:${id}`)],
     [Markup.button.callback("🔔 ID канала уведомлений", `pp_prompt:notificationChatId:${id}`)],
+    [Markup.button.callback("💳 Настроить оплату", `pp_payment_menu:${id}`)],
     [Markup.button.callback("🔢 sortOrder", `pp_prompt:sortOrder:${id}`)],
     [Markup.button.callback("⬅️ К списку", "pp_list")],
     [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+  ]);
+
+const ppPaymentMenuKeyboard = (id) =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback("BLIK", `pp_pay_prompt:${id}:blik`)],
+    [Markup.button.callback("Криптовалюта", `pp_pay_prompt:${id}:crypto`)],
+    [Markup.button.callback("Укр. карта", `pp_pay_prompt:${id}:ua_card`)],
+    [Markup.button.callback("Наличные", `pp_pay_prompt:${id}:cash`)],
+    [Markup.button.callback("⬅️ К точке", `pp_open:${id}`)],
   ]);
 
 const ppListKeyboard = (points = []) =>
@@ -1284,6 +1304,76 @@ bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|
   };
 
   return ctx.reply(prompts[field] || "Введите новое значение", { parse_mode: "Markdown" });
+});
+
+bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return;
+
+  const id = String(ctx.match?.[1] || "").trim();
+  if (!id) return;
+
+  try {
+    const data = await api(`/pickup-points?active=0`);
+    const points = data.pickupPoints || [];
+    const point = points.find((x) => String(x._id) === id);
+
+    if (!point) return ctx.answerCbQuery("Точка не найдена");
+
+    const text =
+      `${renderPickupPointPreview(point)}\n\n` +
+      `Выберите способ оплаты для настройки.\n\n` +
+      `Формат ввода далее: \`label | detailsValue | badge | on/off\``;
+
+    if (ctx.callbackQuery?.message?.photo) {
+      await ctx.editMessageCaption(text, {
+        parse_mode: "Markdown",
+        reply_markup: ppPaymentMenuKeyboard(id).reply_markup,
+      });
+    } else {
+      await ctx.editMessageText(text, {
+        parse_mode: "Markdown",
+        reply_markup: ppPaymentMenuKeyboard(id).reply_markup,
+      });
+    }
+  } catch (e) {
+    console.error(e);
+    await ctx.answerCbQuery("Ошибка");
+  }
+});
+
+bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return;
+
+  const id = String(ctx.match?.[1] || "").trim();
+  const methodKey = String(ctx.match?.[2] || "").trim();
+  if (!id || !methodKey) return;
+
+  setState(ctx.chat.id, {
+    mode: "pp_payment_prompt",
+    pointId: id,
+    methodKey,
+  });
+
+  const methodLabel =
+    methodKey === "blik"
+      ? "BLIK"
+      : methodKey === "crypto"
+      ? "Криптовалюта"
+      : methodKey === "ua_card"
+      ? "Украинская карта"
+      : methodKey === "cash"
+      ? "Наличные"
+      : methodKey;
+
+  return ctx.reply(
+    `Введите настройки для *${methodLabel}* в формате:\n\n` +
+      `*label | detailsValue | badge | on/off*\n\n` +
+      `Пример для BLIK:\n` +
+      "`BLIK | +48 576 471 380 | BLIK | on`\n\n" +
+      `Пример для наличных:\n` +
+      "`Наличные при получении | Оплата на месте | Наличные | on`",
+    { parse_mode: "Markdown" }
+  );
 });
 
 // =====================================================
@@ -2275,6 +2365,69 @@ bot.on("text", async (ctx) => {
         return next?.();
       } catch (e) {
         return ctx.reply(`❌ ${e.message}`);
+      }
+    }
+
+    if (st.mode === "pp_payment_prompt") {
+      try {
+        const text = String(ctx.message?.text || "").trim();
+        const [labelRaw, detailsRaw, badgeRaw, activeRaw] = text
+          .split("|")
+          .map((x) => String(x || "").trim());
+
+        if (!labelRaw) {
+          return ctx.reply("❌ Укажите label в формате: label | detailsValue | badge | on/off");
+        }
+
+        const data = await api(`/pickup-points?active=0`);
+        const points = data.pickupPoints || [];
+        const point = points.find((x) => String(x._id) === String(st.pointId));
+
+        if (!point) {
+          clearState(ctx.chat.id);
+          return ctx.reply("❌ Точка не найдена", mainMenu());
+        }
+
+        const methods = Array.isArray(point?.paymentConfig?.methods)
+          ? [...point.paymentConfig.methods]
+          : [];
+
+        const idx = methods.findIndex(
+          (m) => String(m?.key || "") === String(st.methodKey)
+        );
+
+        const nextMethod = {
+          key: st.methodKey,
+          label: labelRaw,
+          detailsValue: detailsRaw || "",
+          badge: badgeRaw || "",
+          isActive: String(activeRaw || "on").toLowerCase() !== "off",
+        };
+
+        if (idx >= 0) methods[idx] = nextMethod;
+        else methods.push(nextMethod);
+
+        await api(`/admin/pickup-points/${st.pointId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            paymentConfig: { methods },
+          }),
+        });
+
+        const refreshed = await api(`/pickup-points?active=0`);
+        const updatedPoint = (refreshed.pickupPoints || []).find(
+          (x) => String(x._id) === String(st.pointId)
+        );
+
+        clearState(ctx.chat.id);
+
+        return ctx.reply(renderPickupPointPreview(updatedPoint), {
+          parse_mode: "Markdown",
+          ...ppMenuKeyboard(updatedPoint._id),
+        });
+      } catch (e) {
+        console.error(e);
+        return ctx.reply(`❌ Ошибка: ${e.message}`);
       }
     }
 
