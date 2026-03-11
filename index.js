@@ -218,10 +218,11 @@ const SUPER_ADMIN_IDS = (process.env.SUPER_ADMIN_IDS || "")
 const isSuperAdmin = (ctx) => SUPER_ADMIN_IDS.includes(String(ctx.from?.id || ""));
 
 const slugify = (s) =>
-  String(s || "")
+  translitRuToLat(String(s || ""))
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
     .replace(/^-+/, "")
     .replace(/-+$/, "")
     .slice(0, 32) || "flavor";
