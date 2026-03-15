@@ -810,6 +810,7 @@ const ppMenuKeyboard = (id) =>
       Markup.button.callback("📝 Название", `pp_prompt:title:${id}`),
       Markup.button.callback("📍 Адрес", `pp_prompt:address:${id}`),
     ],
+    [Markup.button.callback("🗓 График на сегодня", `pp_prompt_today_schedule:${id}`)],
     [Markup.button.callback("👤 ID менеджеров", `pp_prompt:allowedAdminTelegramIds:${id}`)],
     [Markup.button.callback("🔔 ID канала уведомлений", `pp_prompt:notificationChatId:${id}`)],
     [Markup.button.callback("💳 Настроить оплату", `pp_payment_menu:${id}`)],
@@ -1307,6 +1308,28 @@ bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|
   };
 
   return ctx.reply(prompts[field] || "Введите новое значение", { parse_mode: "Markdown" });
+});
+
+bot.action(/^pp_prompt_today_schedule:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt_today_schedule",
+    pickupPointId,
+  });
+
+  return ctx.reply(
+    "🗓 *График на сегодня*\n\n" +
+      "Отправь одним сообщением:\n" +
+      "`10:00-22:00`\n\n" +
+      "или\n\n" +
+      "`выходной`",
+    { parse_mode: "Markdown" }
+  );
 });
 
 bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
@@ -2488,6 +2511,93 @@ bot.on("text", async (ctx) => {
           parse_mode: "Markdown",
           reply_markup: ppMenuKeyboard(id).reply_markup,
         });
+      } catch (e) {
+        return ctx.reply(`❌ Ошибка: ${e.message}`);
+      }
+    }
+
+    if (st?.mode === "pp_prompt_today_schedule") {
+      const text = String(ctx.message.text || "").trim();
+      const pickupPointId = String(st.pickupPointId || "").trim();
+
+      if (!pickupPointId) {
+        clearState(ctx.chat.id);
+        return ctx.reply("❌ Точка не найдена.");
+      }
+
+      const todayKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Warsaw",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date());
+
+      let scheduleValue = null;
+
+      if (text.toLowerCase() === "выходной") {
+        scheduleValue = {
+          isOpen: false,
+          from: "",
+          to: "",
+          note: "выходной",
+        };
+      } else {
+        const m = text.match(/^([0-2]\d):([0-5]\d)\s*-\s*([0-2]\d):([0-5]\d)$/);
+
+        if (!m) {
+          return ctx.reply(
+            "❌ Неверный формат.\n\n" +
+              "Используй:\n" +
+              "`10:00-22:00`\n\n" +
+              "или\n\n" +
+              "`выходной`",
+            { parse_mode: "Markdown" }
+          );
+        }
+
+        const from = `${m[1]}:${m[2]}`;
+        const to = `${m[3]}:${m[4]}`;
+
+        scheduleValue = {
+          isOpen: true,
+          from,
+          to,
+          note: "",
+        };
+      }
+
+      try {
+        await api(`/admin/pickup-points/${pickupPointId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            scheduleByDatePatch: {
+              [todayKey]: scheduleValue,
+            },
+          }),
+        });
+
+        clearState(ctx.chat.id);
+
+        await ctx.reply(
+          `✅ График на сегодня сохранён:\n\n${todayKey}\n${
+            scheduleValue.isOpen
+              ? `${scheduleValue.from}-${scheduleValue.to}`
+              : "выходной"
+          }`
+        );
+
+        const pointData = await api(`/pickup-points?active=0`);
+        const points = Array.isArray(pointData?.pickupPoints) ? pointData.pickupPoints : [];
+        const point = points.find((x) => String(x?._id) === String(pickupPointId));
+
+        if (point) {
+          return ctx.replyWithMarkdown(
+            renderPickupPointPreview(point),
+            ppMenuKeyboard(point._id)
+          );
+        }
+
+        return ctx.reply("Ок.", mainMenu());
       } catch (e) {
         return ctx.reply(`❌ Ошибка: ${e.message}`);
       }
