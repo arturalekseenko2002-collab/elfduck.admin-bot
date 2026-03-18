@@ -783,6 +783,22 @@ const renderPickupPointPreview = (p) => {
     }`
   );
   lines.push(`• канал уведомлений: *${p?.notificationChatId || "—"}*`);
+  lines.push(`• канал статистики: *${p?.statsChatId || p?.notificationChatId || "—"}*`);
+
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Warsaw",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const todaySchedule =
+    p?.scheduleByDate?.[todayKey] ||
+    p?.scheduleByDate?.get?.(todayKey) ||
+    null;
+
+  const autoStatsTime = String(todaySchedule?.to || p?.statsSendTime || "23:59").trim();
+  lines.push(`• время отправки статистики: *${autoStatsTime}*`);
 
   const pm = Array.isArray(p?.paymentConfig?.methods) ? p.paymentConfig.methods : [];
   lines.push(
@@ -813,6 +829,7 @@ const ppMenuKeyboard = (id) =>
     [Markup.button.callback("🗓 График на сегодня", `pp_prompt_today_schedule:${id}`)],
     [Markup.button.callback("👤 ID менеджеров", `pp_prompt:allowedAdminTelegramIds:${id}`)],
     [Markup.button.callback("🔔 ID канала уведомлений", `pp_prompt:notificationChatId:${id}`)],
+    [Markup.button.callback("📊 ID канала статистики", `pp_prompt:statsChatId:${id}`)],
     [Markup.button.callback("💳 Настроить оплату", `pp_payment_menu:${id}`)],
     [Markup.button.callback("🔢 sortOrder", `pp_prompt:sortOrder:${id}`)],
     [Markup.button.callback("⬅️ К списку", "pp_list")],
@@ -1145,6 +1162,9 @@ bot.action("pp_create", async (ctx) => {
       isActive: true,
       allowedAdminTelegramIds: [],
       notificationChatId: "",
+      statsChatId: "",
+      statsSendTime: "23:59",
+      scheduleByDate: {},
     },
   });
 
@@ -1193,6 +1213,12 @@ bot.action("pp_create_confirm", async (ctx) => {
         ? d.allowedAdminTelegramIds.map((x) => String(x).trim()).filter(Boolean)
         : [],
       notificationChatId: String(d.notificationChatId || "").trim(),
+      statsChatId: String(d.statsChatId || "").trim(),
+      statsSendTime: String(d.statsSendTime || "23:59").trim(),
+      scheduleByDate:
+        d.scheduleByDate && typeof d.scheduleByDate === "object"
+          ? d.scheduleByDate
+          : {},
     };
 
     await api("/admin/pickup-points", {
@@ -1290,7 +1316,7 @@ bot.action(/pp_delete:(.+)/, async (ctx) => {
   }
 });
 
-bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|sortOrder):(.+)/, async (ctx) => {
+bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|statsChatId|sortOrder):(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
 
@@ -1304,6 +1330,7 @@ bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|
     address: "Введите новый *адрес* (или `-` чтобы отменить)",
     allowedAdminTelegramIds: "Введите *ID менеджеров* через запятую (telegramId) (или `-` чтобы очистить/отменить)",
     notificationChatId: "Введите *ID чата* для получения уведомлений о заказах",
+    statsChatId: "Введите *ID чата* для получения статистики по складу",
     sortOrder: "Введите новый *sortOrder* (0,1,2...) (или `-` чтобы отменить)",
   };
 
