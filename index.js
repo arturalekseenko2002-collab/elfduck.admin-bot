@@ -2522,8 +2522,8 @@ bot.on("text", async (ctx) => {
           patch.allowedAdminTelegramIds = ids;
         }
 
-        if (field === "notificationChatId") {
-          patch.notificationChatId = text;
+        if (field === "notificationChatId" || field === "statsChatId") {
+          patch[field] = String(text || "").trim();
         }
 
         const updated = await api(`/admin/pickup-points/${id}`, {
