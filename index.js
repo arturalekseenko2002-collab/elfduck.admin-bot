@@ -417,10 +417,17 @@ const askFlavorStep = async (ctx) => {
     const kb = Markup.inlineKeyboard([
       ...points
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-        .map((p) => [
-          // ⚡️ тут можно показывать только адрес
-          Markup.button.callback(`${p.isActive ? "✅" : "⛔️"} ${p.address || "Без адреса"}`, `fl_pick_point:${p._id}`),
-        ]),
+        .map((p) => {
+          const pointTitle = String(p?.title || "").trim();
+          const pointAddress = String(p?.address || "").trim();
+          const pointLabel = pointTitle && pointAddress
+            ? `${pointTitle} (${pointAddress})`
+            : pointTitle || pointAddress || "Без названия";
+
+          return [
+            Markup.button.callback(`${p.isActive ? "✅" : "⛔️"} ${pointLabel}`, `fl_pick_point:${p._id}`),
+          ];
+        }),
       [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
     ]);
 
