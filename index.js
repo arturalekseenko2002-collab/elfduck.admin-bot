@@ -76,6 +76,7 @@ const mainMenu = () =>
     [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
+    [Markup.button.callback("🤖 Сменить Bot Token", "bot_token_change_start")],
   ]);
 
 // =====================================================
@@ -2340,6 +2341,29 @@ bot.action(/prod_set_category:(.+)/, async (ctx) => {
   return nextProductStep(ctx);
 });
 
+bot.action("bot_token_change_start", async (ctx) => {
+  if (!isAdmin(ctx)) return;
+
+  setState(ctx.chat.id, {
+    mode: "bot_token_change",
+    step: 0,
+    data: {},
+  });
+
+  await ctx.reply(
+    "Отправьте новый Telegram Bot Token одним сообщением.\n\nПосле сохранения backend попробует сразу переключить рабочего бота на новый токен.",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("✖️ Отмена", "bot_token_change_cancel")]
+    ])
+  );
+});
+
+bot.action("bot_token_change_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return;
+  clearState(ctx.chat.id);
+  await ctx.reply("Смена токена отменена.", mainMenu());
+});
+
 // ----- text inputs for steps -----
 bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
@@ -2634,6 +2658,33 @@ bot.on("text", async (ctx) => {
         return ctx.reply("Ок.", mainMenu());
       } catch (e) {
         return ctx.reply(`❌ Ошибка: ${e.message}`);
+      }
+    }
+
+    if (st?.mode === "bot_token_change") {
+      try {
+        const token = String(ctx.message?.text || "").trim();
+
+        if (!token) {
+          return ctx.reply("Токен пустой. Отправьте корректный Telegram Bot Token.");
+        }
+
+        await api("/admin/runtime-bot-token", {
+          method: "PUT",
+          body: JSON.stringify({
+            token,
+            updatedBy: String(ctx.from?.id || ""),
+          }),
+        });
+
+        clearState(ctx.chat.id);
+
+        return ctx.reply(
+          "✅ Новый Bot Token сохранён. Backend попытался сразу переключить рабочего бота на него.",
+          mainMenu()
+        );
+      } catch (e) {
+        return ctx.reply(`❌ Не удалось сменить токен: ${e.message}`);
       }
     }
 
