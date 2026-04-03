@@ -73,6 +73,7 @@ const mainMenu = () =>
     [Markup.button.callback("➕ Создать категорию (конструктор)", "cat_builder_start")],
     [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
     [Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start")],
+    [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
     [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
@@ -85,6 +86,84 @@ const state = new Map(); // chatId -> { mode, step, data }
 const getState = (chatId) => state.get(String(chatId));
 const setState = (chatId, st) => state.set(String(chatId), st);
 const clearState = (chatId) => state.delete(String(chatId));
+const defaultCashbackGrantData = () => ({
+  username: "",
+  amountZl: 0,
+  note: "",
+});
+
+// =====================================================
+// ================= CASHBACK GRANT WIZARD ==============
+// =====================================================
+
+const CASHBACK_GRANT_STEPS = ["username", "amount", "note", "confirm"];
+
+const renderCashbackGrantPreview = (d = {}) => {
+  const lines = [];
+  lines.push("💰 *Начисление кэшбека — превью*");
+  lines.push("");
+  lines.push(`• username: *${d.username || "—"}*`);
+  lines.push(`• сумма: *${Number(d.amountZl || 0).toFixed(2)} zł*`);
+  lines.push(`• комментарий: ${d.note ? `*${d.note}*` : "—"}`);
+  return lines.join("\n");
+};
+
+const cashbackGrantNavKeyboard = (stepIndex) => {
+  const backBtn = stepIndex > 0
+    ? Markup.button.callback("⬅️ Назад", "cashback_grant_back")
+    : null;
+
+  const cancelBtn = Markup.button.callback("✖️ Отмена", "cashback_grant_cancel");
+
+  return backBtn
+    ? Markup.inlineKeyboard([[backBtn, cancelBtn]])
+    : Markup.inlineKeyboard([[cancelBtn]]);
+};
+
+const askCashbackGrantStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cashback_grant") return;
+
+  const step = CASHBACK_GRANT_STEPS[st.step];
+  const preview = renderCashbackGrantPreview(st.data || {});
+
+  if (step === "username") {
+    return ctx.reply(
+      `${preview}\n\nВведите *username пользователя* в формате: \`@username\``,
+      { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
+    );
+  }
+
+  if (step === "amount") {
+    return ctx.reply(
+      `${preview}\n\nВведите *сумму начисления* в zł, пример: \`25\` или \`37.5\``,
+      { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
+    );
+  }
+
+  if (step === "note") {
+    return ctx.reply(
+      `${preview}\n\nВведите *комментарий* для истории начисления или отправьте \`-\`, если без комментария.`,
+      { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
+    );
+  }
+
+  if (step === "confirm") {
+    return ctx.reply(
+      `${preview}\n\nПодтвердить начисление кэшбека?`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("✅ Начислить", "cashback_grant_confirm")],
+          [
+            Markup.button.callback("⬅️ Назад", "cashback_grant_back"),
+            Markup.button.callback("✖️ Отмена", "cashback_grant_cancel"),
+          ],
+        ]),
+      }
+    );
+  }
+};
 
 // =====================================================
 // =================== CATEGORY BUILDER =================
@@ -1121,6 +1200,94 @@ bot.start(async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔️ Нет доступа");
   clearState(ctx.chat.id);
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu());
+});
+
+bot.action("cashback_grant_start", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    setState(ctx.chat.id, {
+      mode: "cashback_grant",
+      step: 0,
+      data: defaultCashbackGrantData(),
+    });
+
+    return askCashbackGrantStep(ctx);
+  } catch (e) {
+    console.error("cashback_grant_start error:", e);
+  }
+});
+
+bot.action("cashback_grant_back", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "cashback_grant") return;
+
+    st.step = Math.max(0, Number(st.step || 0) - 1);
+    setState(ctx.chat.id, st);
+    return askCashbackGrantStep(ctx);
+  } catch (e) {
+    console.error("cashback_grant_back error:", e);
+  }
+});
+
+bot.action("cashback_grant_cancel", async (ctx) => {
+  try {
+    await ctx.answerCbQuery("Отменено");
+    if (!isAdmin(ctx)) return;
+
+    clearState(ctx.chat.id);
+    return ctx.reply("Начисление кэшбека отменено.", mainMenu());
+  } catch (e) {
+    console.error("cashback_grant_cancel error:", e);
+  }
+});
+
+bot.action("cashback_grant_confirm", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "cashback_grant") return;
+
+    const username = String(st.data?.username || "").trim().replace(/^@+/, "");
+    const amountZl = Number(st.data?.amountZl || 0);
+    const note = String(st.data?.note || "").trim();
+
+    if (!username) return ctx.reply("❌ Укажи username пользователя.");
+    if (!(amountZl > 0)) return ctx.reply("❌ Сумма должна быть больше 0.");
+
+    const result = await api("/admin/users/cashback/grant-by-username", {
+      method: "POST",
+      body: JSON.stringify({
+        username,
+        amountZl,
+        note,
+        grantedByTelegramId: String(ctx.from?.id || ""),
+        grantedByUsername: String(ctx.from?.username || ""),
+      }),
+    });
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      [
+        "✅ Кэшбек начислен",
+        `username: @${username}`,
+        `сумма: ${amountZl.toFixed(2)} zł`,
+        `новый баланс: ${Number(result?.cashbackBalance || 0).toFixed(2)} zł`,
+      ].join("\n"),
+      mainMenu()
+    );
+  } catch (e) {
+    console.error("cashback_grant_confirm error:", e);
+    return ctx.reply(`❌ Ошибка начисления: ${e.message}`);
+  }
 });
 
 // =====================================================
@@ -2346,6 +2513,44 @@ bot.on("text", async (ctx) => {
 
     const st = getState(ctx.chat.id);
     if (!st) return;
+
+    if (st?.mode === "cashback_grant") {
+      const step = CASHBACK_GRANT_STEPS[st.step];
+      const text = String(ctx.message?.text || "").trim();
+
+      if (step === "username") {
+        const username = text.replace(/^@+/, "").trim();
+        if (!username || username.includes(" ")) {
+          return ctx.reply("❌ Введи username в формате @username или username без пробелов.");
+        }
+
+        st.data.username = `@${username}`;
+        st.step = 1;
+        setState(ctx.chat.id, st);
+        return askCashbackGrantStep(ctx);
+      }
+
+      if (step === "amount") {
+        const normalized = text.replace(",", ".");
+        const amountZl = Number(normalized);
+
+        if (!Number.isFinite(amountZl) || amountZl <= 0) {
+          return ctx.reply("❌ Введи корректную сумму больше 0. Пример: 25 или 37.5");
+        }
+
+        st.data.amountZl = Number(amountZl.toFixed(2));
+        st.step = 2;
+        setState(ctx.chat.id, st);
+        return askCashbackGrantStep(ctx);
+      }
+
+      if (step === "note") {
+        st.data.note = text === "-" ? "" : text;
+        st.step = 3;
+        setState(ctx.chat.id, st);
+        return askCashbackGrantStep(ctx);
+      }
+    }
 
     // ===== pickup points: create wizard =====
     if (st.mode === "pp_create") {
