@@ -89,14 +89,13 @@ const clearState = (chatId) => state.delete(String(chatId));
 const defaultCashbackGrantData = () => ({
   username: "",
   amountZl: 0,
-  note: "",
 });
 
 // =====================================================
 // ================= CASHBACK GRANT WIZARD ==============
 // =====================================================
 
-const CASHBACK_GRANT_STEPS = ["username", "amount", "note", "confirm"];
+const CASHBACK_GRANT_STEPS = ["username", "amount", "confirm"];
 
 const renderCashbackGrantPreview = (d = {}) => {
   const lines = [];
@@ -104,7 +103,7 @@ const renderCashbackGrantPreview = (d = {}) => {
   lines.push("");
   lines.push(`• username: *${d.username || "—"}*`);
   lines.push(`• сумма: *${Number(d.amountZl || 0).toFixed(2)} zł*`);
-  lines.push(`• комментарий: ${d.note ? `*${d.note}*` : "—"}`);
+  // lines.push(`• комментарий: ${d.note ? `*${d.note}*` : "—"}`);
   return lines.join("\n");
 };
 
@@ -141,12 +140,12 @@ const askCashbackGrantStep = async (ctx) => {
     );
   }
 
-  if (step === "note") {
-    return ctx.reply(
-      `${preview}\n\nВведите *комментарий* для истории начисления или отправьте \`-\`, если без комментария.`,
-      { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
-    );
-  }
+  // if (step === "note") {
+  //   return ctx.reply(
+  //     `${preview}\n\nВведите *комментарий* для истории начисления или отправьте \`-\`, если без комментария.`,
+  //     { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
+  //   );
+  // }
 
   if (step === "confirm") {
     return ctx.reply(
@@ -1257,7 +1256,7 @@ bot.action("cashback_grant_confirm", async (ctx) => {
 
     const username = String(st.data?.username || "").trim().replace(/^@+/, "");
     const amountZl = Number(st.data?.amountZl || 0);
-    const note = String(st.data?.note || "").trim();
+    // const note = String(st.data?.note || "").trim();
 
     if (!username) return ctx.reply("❌ Укажи username пользователя.");
     if (!(amountZl > 0)) return ctx.reply("❌ Сумма должна быть больше 0.");
@@ -1267,7 +1266,7 @@ bot.action("cashback_grant_confirm", async (ctx) => {
       body: JSON.stringify({
         username,
         amountZl,
-        note,
+        // note,
         grantedByTelegramId: String(ctx.from?.id || ""),
         grantedByUsername: String(ctx.from?.username || ""),
       }),
@@ -2533,20 +2532,12 @@ bot.on("text", async (ctx) => {
       if (step === "amount") {
         const normalized = text.replace(",", ".");
         const amountZl = Number(normalized);
-
         if (!Number.isFinite(amountZl) || amountZl <= 0) {
           return ctx.reply("❌ Введи корректную сумму больше 0. Пример: 25 или 37.5");
         }
 
         st.data.amountZl = Number(amountZl.toFixed(2));
         st.step = 2;
-        setState(ctx.chat.id, st);
-        return askCashbackGrantStep(ctx);
-      }
-
-      if (step === "note") {
-        st.data.note = text === "-" ? "" : text;
-        st.step = 3;
         setState(ctx.chat.id, st);
         return askCashbackGrantStep(ctx);
       }
