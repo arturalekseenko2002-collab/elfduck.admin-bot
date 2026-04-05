@@ -24,6 +24,88 @@ if (!ADMIN_API_TOKEN) throw new Error("ADMIN_API_TOKEN is missing");
 // =====================================================
 const bot = new Telegraf(BOT_TOKEN);
 
+const lastBotMessageIdByChat = new Map();
+
+const forgetBotMessage = (chatId, messageId) => {
+  const safeChatId = String(chatId || "");
+  const safeMessageId = Number(messageId || 0);
+  if (!safeChatId || !safeMessageId) return;
+
+  const current = Number(lastBotMessageIdByChat.get(safeChatId) || 0);
+  if (current === safeMessageId) {
+    lastBotMessageIdByChat.delete(safeChatId);
+  }
+};
+
+const replaceBotMessage = async (ctx, sendFn) => {
+  const chatId = String(ctx?.chat?.id || "");
+  if (!chatId) {
+    return sendFn();
+  }
+
+  const prevMessageId = Number(lastBotMessageIdByChat.get(chatId) || 0);
+
+  if (prevMessageId) {
+    try {
+      await ctx.telegram.deleteMessage(chatId, prevMessageId);
+    } catch {}
+    lastBotMessageIdByChat.delete(chatId);
+  }
+
+  const sent = await sendFn();
+  const nextMessageId = Number(sent?.message_id || 0);
+
+  if (nextMessageId) {
+    lastBotMessageIdByChat.set(chatId, nextMessageId);
+  }
+
+  return sent;
+};
+
+bot.use(async (ctx, next) => {
+  const originalReply = ctx.reply.bind(ctx);
+  const originalReplyWithPhoto = ctx.replyWithPhoto.bind(ctx);
+  const originalReplyWithDocument = ctx.replyWithDocument?.bind(ctx);
+  const originalReplyWithMediaGroup = ctx.replyWithMediaGroup?.bind(ctx);
+
+  ctx.reply = (...args) => replaceBotMessage(ctx, () => originalReply(...args));
+  ctx.replyWithPhoto = (...args) => replaceBotMessage(ctx, () => originalReplyWithPhoto(...args));
+
+  if (originalReplyWithDocument) {
+    ctx.replyWithDocument = (...args) =>
+      replaceBotMessage(ctx, () => originalReplyWithDocument(...args));
+  }
+
+  if (originalReplyWithMediaGroup) {
+    ctx.replyWithMediaGroup = async (...args) => {
+      const chatId = String(ctx?.chat?.id || "");
+      if (!chatId) {
+        return originalReplyWithMediaGroup(...args);
+      }
+
+      const prevMessageId = Number(lastBotMessageIdByChat.get(chatId) || 0);
+      if (prevMessageId) {
+        try {
+          await ctx.telegram.deleteMessage(chatId, prevMessageId);
+        } catch {}
+        lastBotMessageIdByChat.delete(chatId);
+      }
+
+      const sentList = await originalReplyWithMediaGroup(...args);
+      const lastItem = Array.isArray(sentList) ? sentList[sentList.length - 1] : null;
+      const nextMessageId = Number(lastItem?.message_id || 0);
+
+      if (nextMessageId) {
+        lastBotMessageIdByChat.set(chatId, nextMessageId);
+      }
+
+      return sentList;
+    };
+  }
+
+  return next();
+});
+
 const isAdmin = (ctx) => ADMIN_IDS.includes(String(ctx.from?.id || ""));
 
 const api = async (path, options = {}) => {
@@ -1220,6 +1302,10 @@ bot.action("menu", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
 
+  if (ctx.callbackQuery?.message?.message_id) {
+    forgetBotMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
+  }
+
   clearState(ctx.chat.id);
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
 });
@@ -1227,6 +1313,13 @@ bot.action("menu", async (ctx) => {
 bot.start(async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔️ Нет доступа");
   clearState(ctx.chat.id);
+
+  if (ctx.message?.message_id) {
+    try {
+      await ctx.deleteMessage(ctx.message.message_id);
+    } catch {}
+  }
+
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
 });
 
@@ -2539,6 +2632,12 @@ bot.action(/prod_set_category:(.+)/, async (ctx) => {
 // ----- text inputs for steps -----
 bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
+
+    if (ctx.message?.message_id) {
+      try {
+        await ctx.deleteMessage(ctx.message.message_id);
+      } catch {}
+    }
 
     const st = getState(ctx.chat.id);
     if (!st) return;
