@@ -68,7 +68,14 @@ function translitRuToLat(input) {
 // =====================================================
 // ====================== UI MENU =======================
 // =====================================================
-const mainMenu = () =>
+const managerMainMenu = () =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback("📦 Наличие", "fl_builder_start")],
+    [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
+    [Markup.button.callback("🏪 Точка самовывоза", "pp_list")],
+  ]);
+
+const superAdminMainMenu = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback("➕ Создать категорию (конструктор)", "cat_builder_start")],
     [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
@@ -77,6 +84,19 @@ const mainMenu = () =>
     [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
+  ]);
+
+const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : managerMainMenu());
+
+const pickupPointManagerMenu = (ppId) =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
+    [Markup.button.callback("🕒 График на сегодня", `pp_edit_today_schedule:${ppId}`)],
+    [Markup.button.callback("🔔 ID канала уведомлений", `pp_edit_orders_chat:${ppId}`)],
+    [Markup.button.callback("📊 ID канала статистики", `pp_edit_stats_chat:${ppId}`)],
+    [Markup.button.callback("💳 Настроить оплату", `pp_payment_menu:${ppId}`)],
+    [Markup.button.callback("⬅️ К списку", "pp_list")],
+    [Markup.button.callback("🏠 Меню", "menu")],
   ]);
 
 // =====================================================
@@ -398,7 +418,7 @@ const askFlavorStep = async (ctx) => {
 
     if (!products.length) {
       clearState(ctx.chat.id);
-      return ctx.reply("Товаров пока нет. Сначала создай товар.", mainMenu());
+      return ctx.reply("Товаров пока нет. Сначала создай товар.", mainMenu(ctx));
     }
 
     const kb = Markup.inlineKeyboard([
@@ -605,7 +625,7 @@ const askProductStep = async (ctx) => {
 
       if (!categories.length) {
         clearState(ctx.chat.id);
-        return ctx.reply("Категорий пока нет. Сначала создай категорию.", mainMenu());
+        return ctx.reply("Категорий пока нет. Сначала создай категорию.", mainMenu(ctx));
       }
 
       const kb = Markup.inlineKeyboard([
@@ -624,7 +644,7 @@ const askProductStep = async (ctx) => {
       return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.category, caption, keyboard: kb });
     } catch (e) {
       clearState(ctx.chat.id);
-      return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+      return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
     }
   }
 
@@ -930,7 +950,7 @@ const ppPaymentMenuKeyboard = (id) =>
     [Markup.button.callback("⬅️ К точке", `pp_open:${id}`)],
   ]);
 
-const ppListKeyboard = (points = []) =>
+const ppListKeyboard = (points = [], ctx = null) =>
   Markup.inlineKeyboard([
     ...points
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
@@ -940,8 +960,8 @@ const ppListKeyboard = (points = []) =>
           `pp_open:${p._id}`
         ),
       ]),
-    [Markup.button.callback("➕ Создать точку", "pp_create")],
-    [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+    ...(ctx && isSuperAdmin(ctx) ? [[Markup.button.callback("➕ Создать точку", "pp_create")]] : []),
+    [Markup.button.callback("🏠 Меню", "menu")],
   ]);
 
 const askPickupCreateStep = async (ctx) => {
@@ -1195,10 +1215,19 @@ const nextStep = async (ctx) => {
 // =====================================================
 // ======================= COMMANDS =====================
 // =====================================================
+
+bot.action("menu", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
+});
+
 bot.start(async (ctx) => {
   if (!isAdmin(ctx)) return ctx.reply("⛔️ Нет доступа");
   clearState(ctx.chat.id);
-  return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu());
+  return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
 });
 
 bot.action("cashback_grant_start", async (ctx) => {
@@ -1240,7 +1269,7 @@ bot.action("cashback_grant_cancel", async (ctx) => {
     if (!isAdmin(ctx)) return;
 
     clearState(ctx.chat.id);
-    return ctx.reply("Начисление кэшбека отменено.", mainMenu());
+    return ctx.reply("Начисление кэшбека отменено.", mainMenu(ctx));
   } catch (e) {
     console.error("cashback_grant_cancel error:", e);
   }
@@ -1281,7 +1310,7 @@ bot.action("cashback_grant_confirm", async (ctx) => {
         `сумма: ${amountZl.toFixed(2)} zł`,
         `новый баланс: ${Number(result?.cashbackBalance || 0).toFixed(2)} zł`,
       ].join("\n"),
-      mainMenu()
+      mainMenu(ctx)
     );
   } catch (e) {
     console.error("cashback_grant_confirm error:", e);
@@ -1298,26 +1327,26 @@ bot.action("pp_list", async (ctx) => {
   await ctx.answerCbQuery();
 
   try {
-    const r = await fetch(`${API_URL}/pickup-points?active=0`);
-    const data = await r.json().catch(() => ({}));
-    const points = data?.pickupPoints || (Array.isArray(data) ? data : []);
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
 
     if (!points.length) {
       return ctx.reply(
         "Точек самовывоза пока нет.",
         Markup.inlineKeyboard([
-          [Markup.button.callback("➕ Создать точку", "pp_create")],
-          [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+          ...(isSuperAdmin(ctx) ? [[Markup.button.callback("➕ Создать точку", "pp_create")]] : []),
+          [Markup.button.callback("🏠 Меню", "menu")],
         ])
       );
     }
 
     return ctx.reply("🏪 *Точки самовывоза:*", {
       parse_mode: "Markdown",
-      reply_markup: ppListKeyboard(points).reply_markup,
+      reply_markup: ppListKeyboard(points, ctx).reply_markup,
     });
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -1349,7 +1378,7 @@ bot.action("pp_cancel", async (ctx) => {
   await ctx.answerCbQuery();
 
   clearState(ctx.chat.id);
-  return ctx.reply("Ок, отменено.", mainMenu());
+  return ctx.reply("Ок, отменено.", mainMenu(ctx));
 });
 
 bot.action("pp_back", async (ctx) => {
@@ -1419,21 +1448,21 @@ bot.action(/pp_open:(.+)/, async (ctx) => {
   const id = String(ctx.match[1] || "");
 
   try {
-    const r = await fetch(`${API_URL}/pickup-points?active=0`);
-    const data = await r.json().catch(() => ({}));
-    const points = data?.pickupPoints || (Array.isArray(data) ? data : []);
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
     const p = points.find((x) => String(x._id) === id);
 
-    if (!p) return ctx.reply("Точка не найдена", mainMenu());
+    if (!p) return ctx.reply("Точка не найдена", mainMenu(ctx));
 
     setState(ctx.chat.id, { mode: "pp_open", ppId: id, data: p });
 
     return ctx.reply(renderPickupPointPreview(p), {
       parse_mode: "Markdown",
-      reply_markup: ppMenuKeyboard(id).reply_markup,
+      reply_markup: (isSuperAdmin(ctx) ? ppMenuKeyboard(id) : pickupPointManagerMenu(id)).reply_markup,
     });
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -1444,11 +1473,11 @@ bot.action(/pp_toggle:(.+)/, async (ctx) => {
   const id = String(ctx.match[1] || "");
 
   try {
-    const r = await fetch(`${API_URL}/pickup-points?active=0`);
-    const data = await r.json().catch(() => ({}));
-    const points = data?.pickupPoints || (Array.isArray(data) ? data : []);
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
     const p = points.find((x) => String(x._id) === id);
-    if (!p) return ctx.reply("Точка не найдена", mainMenu());
+    if (!p) return ctx.reply("Точка не найдена", mainMenu(ctx));
 
     const updated = await api(`/admin/pickup-points/${id}`, {
       method: "PATCH",
@@ -1460,10 +1489,10 @@ bot.action(/pp_toggle:(.+)/, async (ctx) => {
 
     return ctx.reply(renderPickupPointPreview(fresh), {
       parse_mode: "Markdown",
-      reply_markup: ppMenuKeyboard(id).reply_markup,
+      reply_markup: (isSuperAdmin(ctx) ? ppMenuKeyboard(id) : pickupPointManagerMenu(id)).reply_markup,
     });
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -1485,7 +1514,7 @@ bot.action(/pp_delete:(.+)/, async (ctx) => {
       ])
     );
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -1539,8 +1568,9 @@ bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
   if (!id) return;
 
   try {
-    const data = await api(`/pickup-points?active=0`);
-    const points = data.pickupPoints || [];
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
     const point = points.find((x) => String(x._id) === id);
 
     if (!point) return ctx.answerCbQuery("Точка не найдена");
@@ -1624,7 +1654,7 @@ bot.action("prod_builder_cancel", async (ctx) => {
   await ctx.answerCbQuery();
 
   clearState(ctx.chat.id);
-  return ctx.reply("Ок, отменил.", mainMenu());
+  return ctx.reply("Ок, отменил.", mainMenu(ctx));
 });
 
 bot.action("prod_builder_back", async (ctx) => {
@@ -1755,9 +1785,9 @@ bot.action("prod_builder_confirm", async (ctx) => {
     });
 
     clearState(ctx.chat.id);
-    return ctx.reply(`✅ Товар создан: ${created?.product?.title1 || "OK"}`, mainMenu());
+    return ctx.reply(`✅ Товар создан: ${created?.product?.title1 || "OK"}`, mainMenu(ctx));
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -1875,7 +1905,7 @@ bot.action("fl_cancel", async (ctx) => {
   await ctx.answerCbQuery();
 
   clearState(ctx.chat.id);
-  return ctx.reply("Ок, отменил.", mainMenu());
+  return ctx.reply("Ок, отменил.", mainMenu(ctx));
 });
 
 bot.action("fl_back", async (ctx) => {
@@ -2028,7 +2058,7 @@ bot.action("fl_confirm", async (ctx) => {
     });
 
     clearState(ctx.chat.id);
-    return ctx.reply("✅ Готово! Вкус/наличие сохранены.", mainMenu());
+    return ctx.reply("✅ Готово! Вкус/наличие сохранены.", mainMenu(ctx));
   } catch (e) {
     return ctx.reply(`❌ Ошибка: ${e.message}`);
   }
@@ -2045,7 +2075,7 @@ bot.action("cat_edit_start", async (ctx) => {
     const data = await r.json().catch(() => ({}));
     const categories = Array.isArray(data) ? data : data.categories || [];
 
-    if (!categories.length) return ctx.reply("Категорий пока нет", mainMenu());
+    if (!categories.length) return ctx.reply("Категорий пока нет", mainMenu(ctx));
 
     return ctx.reply(
       "Выберите категорию для редактирования:",
@@ -2059,7 +2089,7 @@ bot.action("cat_edit_start", async (ctx) => {
       )
     );
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2074,7 +2104,7 @@ bot.action(/cat_edit_pick:(.+)/, async (ctx) => {
   const categories = Array.isArray(data) ? data : data.categories || [];
   const cat = categories.find((c) => String(c._id) === String(id));
 
-  if (!cat) return ctx.reply("Категория не найдена", mainMenu());
+  if (!cat) return ctx.reply("Категория не найдена", mainMenu(ctx));
 
     setState(ctx.chat.id, {
     mode: "cat_edit_menu",
@@ -2182,7 +2212,7 @@ bot.action("cat_edit_toggle_isActive", async (ctx) => {
     setState(ctx.chat.id, st);
     return sendEditMenu(ctx);
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2205,7 +2235,7 @@ bot.action("cat_edit_toggle_overlay", async (ctx) => {
     setState(ctx.chat.id, st);
     return sendEditMenu(ctx);
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2267,7 +2297,7 @@ bot.action(/cat_edit_set_classDuck:(.+)/, async (ctx) => {
     setState(ctx.chat.id, st);
     return sendEditMenu(ctx);
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2307,7 +2337,7 @@ bot.action(/cat_edit_set_titleClass:(.+)/, async (ctx) => {
     setState(ctx.chat.id, st);
     return sendEditMenu(ctx);
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2329,16 +2359,16 @@ bot.action("cat_list", async (ctx) => {
     const data = await r.json().catch(() => ({}));
     const categories = Array.isArray(data) ? data : data.categories || [];
 
-    if (!categories.length) return ctx.reply("Категорий пока нет", mainMenu());
+    if (!categories.length) return ctx.reply("Категорий пока нет", mainMenu(ctx));
 
     const msg = categories
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
       .map((c) => `${c.isActive ? "✅" : "⛔️"} ${c.title} (${c.key})`)
       .join("\n");
 
-    return ctx.reply(msg, mainMenu());
+    return ctx.reply(msg, mainMenu(ctx));
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2358,7 +2388,7 @@ bot.action("cat_builder_cancel", async (ctx) => {
   await ctx.answerCbQuery();
 
   clearState(ctx.chat.id);
-  return ctx.reply("Ок, отменено.", mainMenu());
+  return ctx.reply("Ок, отменено.", mainMenu(ctx));
 });
 
 bot.action("cat_builder_back", async (ctx) => {
@@ -2443,10 +2473,10 @@ bot.action("cat_builder_confirm", async (ctx) => {
     clearState(ctx.chat.id);
     return ctx.reply(
       `✅ Категория создана:\n${created.category.title} (${created.category.key})`,
-      mainMenu()
+      mainMenu(ctx)
     );
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2469,10 +2499,10 @@ bot.action("cat_edit_confirm", async (ctx) => {
 
     return ctx.reply(
       `✅ Категория обновлена:\n${updated.category.title} (${updated.category.key})`,
-      mainMenu()
+      mainMenu(ctx)
     );
   } catch (e) {
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
 });
 
@@ -2641,7 +2671,7 @@ bot.on("text", async (ctx) => {
 
         if (!point) {
           clearState(ctx.chat.id);
-          return ctx.reply("❌ Точка не найдена", mainMenu());
+          return ctx.reply("❌ Точка не найдена", mainMenu(ctx));
         }
 
         const methods = Array.isArray(point?.paymentConfig?.methods)
@@ -2827,7 +2857,7 @@ bot.on("text", async (ctx) => {
           );
         }
 
-        return ctx.reply("Ок.", mainMenu());
+        return ctx.reply("Ок.", mainMenu(ctx));
       } catch (e) {
         return ctx.reply(`❌ Ошибка: ${e.message}`);
       }
@@ -2903,7 +2933,7 @@ bot.on("text", async (ctx) => {
 
         return sendEditMenu(ctx);
     } catch (e) {
-        return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu());
+        return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
     }
     }
 
