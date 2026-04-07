@@ -2830,19 +2830,21 @@ bot.action(/prod_set_category:(.+)/, async (ctx) => {
 bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
 
-    if (ctx.message?.message_id) {
-      try {
-        await ctx.deleteMessage(ctx.message.message_id);
-      } catch {}
-    }
+  const text = String(ctx.message?.text || "").trim();
+  if (text.startsWith("/")) return;
 
-    const st = getState(ctx.chat.id);
-    if (!st) return;
+  if (ctx.message?.message_id) {
+    try {
+      await ctx.deleteMessage(ctx.message.message_id);
+    } catch {}
+  }
+
+  const st = getState(ctx.chat.id);
+  if (!st) return;
 
     if (st?.mode === "cashback_grant") {
       const step = CASHBACK_GRANT_STEPS[st.step];
-      const text = String(ctx.message?.text || "").trim();
-        if (text.startsWith("/")) return;
+      if (text.startsWith("/")) return;
 
       if (step === "username") {
         const username = text.replace(/^@+/, "").trim();
@@ -2872,7 +2874,6 @@ bot.on("text", async (ctx) => {
 
     // ===== pickup points: create wizard =====
     if (st.mode === "pp_create") {
-      const text = String(ctx.message.text || "").trim();
       const step = Number(st.step || 0);
 
       try {
@@ -2909,7 +2910,6 @@ bot.on("text", async (ctx) => {
     // ===== Text handler for FLAVOR BUILDER =====
     if (st && st.mode === "fl_builder") {
       const step = FL_BUILDER_STEPS[st.step];
-      const text = String(ctx.message?.text || "").trim();
 
       try {
         // new flavor input: "label, #HEX1, #HEX2"
@@ -2953,7 +2953,6 @@ bot.on("text", async (ctx) => {
 
     if (st.mode === "pp_payment_prompt") {
       try {
-        const text = String(ctx.message?.text || "").trim();
         const [labelRaw, detailsRaw, badgeRaw, activeRaw] = text
           .split("|")
           .map((x) => String(x || "").trim());
@@ -3016,8 +3015,6 @@ bot.on("text", async (ctx) => {
 
     // ===== pickup points: prompt edit =====
     if (st.mode === "pp_prompt") {
-      const text = String(ctx.message.text || "").trim();
-
       // cancel
       if (text === "-") {
         clearState(ctx.chat.id);
@@ -3077,7 +3074,6 @@ bot.on("text", async (ctx) => {
     }
 
     if (st?.mode === "pp_prompt_today_schedule") {
-      const text = String(ctx.message.text || "").trim();
       const pickupPointId = String(st.pickupPointId || "").trim();
 
       if (!pickupPointId) {
@@ -3166,7 +3162,6 @@ bot.on("text", async (ctx) => {
     // ===== quick edit prompt inputs =====
     if (st.mode === "cat_edit_prompt") {
     const field = st.field;
-    const text = String(ctx.message.text || "").trim();
 
     // cancel/back
     if (text === "-") {
@@ -3241,7 +3236,6 @@ bot.on("text", async (ctx) => {
     if (st.mode !== "cat_builder" && st.mode !== "cat_edit") return;
 
     const step = BUILDER_STEPS[st.step];
-    const text = String(ctx.message.text || "").trim();
 
   if (step === "assetsAndTitle") {
   const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
