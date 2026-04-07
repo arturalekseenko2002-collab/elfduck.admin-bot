@@ -1003,10 +1003,10 @@ const renderPickupPointPreview = (p) => {
   const lines = [];
   lines.push("🏪 *Точка самовывоза — превью*");
   lines.push("");
-  lines.push(`• название: *${p?.title || "—"}*`);
-  lines.push(`• адрес: *${p?.address || "—"}*`);
+  lines.push(`Адрес: *${p?.address || "—"}*`);
+  lines.push("");
   lines.push(
-    `• менеджеры (ID): ${
+    `Менеджеры (ID): ${
       Array.isArray(p?.allowedAdminTelegramIds) && p.allowedAdminTelegramIds.length
         ? p.allowedAdminTelegramIds.join(", ")
         : "—"
@@ -1031,14 +1031,16 @@ const renderPickupPointPreview = (p) => {
       : String(todaySchedule.note || "выходной")
     : "не задан";
 
-  lines.push(`• график на сегодня: *${todayScheduleLabel}*`);
-
+  lines.push("");
+  lines.push(`График на сегодня: *${todayScheduleLabel}*`);
+  lines.push("");
   const autoStatsTime = String(todaySchedule?.to || p?.statsSendTime || "23:59").trim();
-  lines.push(`• время отправки статистики: *${autoStatsTime}*`);
+  lines.push(`Время отправки статистики: *${autoStatsTime}*`);
 
   const pm = Array.isArray(p?.paymentConfig?.methods) ? p.paymentConfig.methods : [];
+  lines.push("");
   lines.push(
-    `• способы оплаты: ${
+    `Способы оплаты: ${
       pm.length
         ? pm
             .map((m) => `\`${String(m.key || "").replace(/`/g, "")}${m.isActive === false ? " (off)" : ""}\``)
