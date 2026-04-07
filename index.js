@@ -1369,14 +1369,8 @@ bot.start(async (ctx) => {
     } catch {}
   }
 
-  const chatId = String(ctx.chat?.id || "");
-  if (chatId) {
-    lastBotMessageIdByChat.delete(chatId);
-  }
-
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
 });
-
 
 bot.action("cashback_grant_start", async (ctx) => {
   try {
