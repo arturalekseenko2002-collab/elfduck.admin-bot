@@ -1675,9 +1675,13 @@ bot.action(/pp_edit_address:(.+)/, async (ctx) => {
     ppId: pickupPointId,
   });
 
-  return ctx.reply("Введите новый *адрес* (или `-` чтобы отменить)", {
-    parse_mode: "Markdown",
-  });
+return ctx.reply("Введите новый *адрес* (или `-` чтобы отменить)", {
+  parse_mode: "Markdown",
+  reply_markup: Markup.inlineKeyboard([
+    [Markup.button.callback("⬅️ К точке", `pp_open:${pickupPointId}`)],
+    [Markup.button.callback("🏠 Меню", "menu")],
+  ]).reply_markup,
+});
 });
 
 bot.action(/pp_edit_today_schedule:(.+)/, async (ctx) => {
@@ -1703,7 +1707,13 @@ bot.action(/pp_edit_today_schedule:(.+)/, async (ctx) => {
       "`10:00-22:00`\n\n" +
       "или\n\n" +
       "`выходной`",
-    { parse_mode: "Markdown" }
+    {
+      parse_mode: "Markdown",
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ К точке", `pp_open:${pickupPointId}`)],
+        [Markup.button.callback("🏠 Меню", "menu")],
+      ]).reply_markup,
+    }
   );
 });
 
@@ -3004,7 +3014,10 @@ bot.on("text", async (ctx) => {
 
         return ctx.reply(renderPickupPointPreview(fresh), {
           parse_mode: "Markdown",
-          reply_markup: ppMenuKeyboard(id).reply_markup,
+          reply_markup: (isSuperAdmin(ctx)
+            ? ppMenuKeyboard(id)
+            : pickupPointManagerMenu(id, { isSuper: false })
+          ).reply_markup,
         });
       } catch (e) {
         return ctx.reply(`❌ Ошибка: ${e.message}`);
