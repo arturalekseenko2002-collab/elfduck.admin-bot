@@ -1012,8 +1012,6 @@ const renderPickupPointPreview = (p) => {
         : "—"
     }`
   );
-  lines.push(`• канал уведомлений: *${p?.notificationChatId || "—"}*`);
-  lines.push(`• канал статистики: *${p?.statsChatId || p?.notificationChatId || "—"}*`);
 
   const todayKey = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Warsaw",
@@ -1026,6 +1024,14 @@ const renderPickupPointPreview = (p) => {
     p?.scheduleByDate?.[todayKey] ||
     p?.scheduleByDate?.get?.(todayKey) ||
     null;
+
+  const todayScheduleLabel = todaySchedule
+    ? todaySchedule.isOpen
+      ? `${todaySchedule.from || "--:--"}-${todaySchedule.to || "--:--"}`
+      : String(todaySchedule.note || "выходной")
+    : "не задан";
+
+  lines.push(`• график на сегодня: *${todayScheduleLabel}*`);
 
   const autoStatsTime = String(todaySchedule?.to || p?.statsSendTime || "23:59").trim();
   lines.push(`• время отправки статистики: *${autoStatsTime}*`);
@@ -1041,8 +1047,6 @@ const renderPickupPointPreview = (p) => {
     }`
   );
 
-  lines.push(`• sortOrder: *${Number(p?.sortOrder ?? 0)}*`);
-  lines.push(`• isActive: *${p?.isActive ? "true" : "false"}*`);
   return lines.join("\n");
 };
 
