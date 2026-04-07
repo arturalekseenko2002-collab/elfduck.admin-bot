@@ -1345,8 +1345,14 @@ bot.action("menu", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
 
-  if (ctx.callbackQuery?.message?.message_id) {
-    forgetBotMessage(ctx.chat.id, ctx.callbackQuery.message.message_id);
+  const callbackMessageId = ctx.callbackQuery?.message?.message_id;
+
+  if (callbackMessageId) {
+    forgetBotMessage(ctx.chat.id, callbackMessageId);
+
+    try {
+      await ctx.deleteMessage(callbackMessageId);
+    } catch {}
   }
 
   clearState(ctx.chat.id);
