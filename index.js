@@ -569,7 +569,7 @@ const askFlavorStep = async (ctx) => {
   if (step === "mode") {
     const kb = Markup.inlineKeyboard([
       [Markup.button.callback("➕ Добавить новый вкус", "fl_set_mode:new")],
-      [Markup.button.callback("📦 Добавить наличие", "fl_set_mode:stock")],
+      [Markup.button.callback("📦 Изменить наличие", "fl_set_mode:stock")],
       [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
     ]);
 
