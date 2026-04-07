@@ -1826,10 +1826,23 @@ bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
 
     if (!point) return ctx.answerCbQuery("Точка не найдена");
 
-    const text =
-      `${renderPickupPointPreview(point)}\n\n` +
-      `Выберите способ оплаты для настройки.\n\n` +
-      `Формат ввода далее: \`label | detailsValue | badge | on/off\``;
+    const pm = Array.isArray(point?.paymentConfig?.methods) ? point.paymentConfig.methods : [];
+    const paymentMethodsLabel = pm.length
+      ? pm
+          .map((m) => `${String(m?.key || "").trim()}${m?.isActive === false ? " (off)" : ""}`)
+          .filter(Boolean)
+          .join(", ")
+      : "—";
+
+    const text = [
+      "🏪 *Точка самовывоза — методы оплаты*",
+      "",
+      `Адрес: *${String(point?.address || point?.title || "—")}*`,
+      "",
+      `Способы оплаты: ${paymentMethodsLabel}`,
+      "",
+      "Выберите способ оплаты для настройки:",
+    ].join("\n");
 
     if (ctx.callbackQuery?.message?.photo) {
       await ctx.editMessageCaption(text, {
@@ -1850,9 +1863,42 @@ bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
 
 bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return;
+  await ctx.answerCbQuery();
 
   const id = String(ctx.match?.[1] || "").trim();
   const methodKey = String(ctx.match?.[2] || "").trim();
+
+  const paymentMethodPromptMeta = {
+    blik: {
+      title: "BLIK",
+      example: "BLIK | +48 573 401 389 | BLIK | on",
+    },
+    crypto: {
+      title: "КРИПТОВАЛЮТА",
+      example: "Криптовалюта | TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a | USDT TRC20 | on",
+    },
+    ua_card: {
+      title: "УКР. КАРТА",
+      example: "Украинская карта | 5395 4182 3356 7590 | Перевод на карту | on",
+    },
+    cash: {
+      title: "НАЛИЧНЫЕ",
+      example: "Наличные | Оплата при получении | Наличные | on",
+    },
+  };
+
+  const promptMeta = paymentMethodPromptMeta[String(methodKey || "").trim()] || {
+    title: "СПОСОБ ОПЛАТЫ",
+    example: "Label | detailsValue | badge | on",
+  };
+
+  const promptText = [
+    `Введите настройки для *${promptMeta.title}* в формате:`,
+    "",
+    `Пример для *${promptMeta.title}*:`,
+    `\`${promptMeta.example}\``,
+  ].join("\n");
+
   if (!id || !methodKey) return;
 
   setState(ctx.chat.id, {
@@ -1861,26 +1907,14 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
     methodKey,
   });
 
-  const methodLabel =
-    methodKey === "blik"
-      ? "BLIK"
-      : methodKey === "crypto"
-      ? "Криптовалюта"
-      : methodKey === "ua_card"
-      ? "Украинская карта"
-      : methodKey === "cash"
-      ? "Наличные"
-      : methodKey;
-
-  return ctx.reply(
-    `Введите настройки для *${methodLabel}* в формате:\n\n` +
-      `*label | detailsValue | badge | on/off*\n\n` +
-      `Пример для BLIK:\n` +
-      "`BLIK | +48 576 471 380 | BLIK | on`\n\n" +
-      `Пример для наличных:\n` +
-      "`Наличные при получении | Оплата на месте | Наличные | on`",
-    { parse_mode: "Markdown" }
-  );
+  return ctx.reply(promptText, {
+    parse_mode: "Markdown",
+    reply_markup: Markup.inlineKeyboard([
+      [Markup.button.callback("⬅️ К оплатам", `pp_payment_menu:${id}`)],
+      [Markup.button.callback("⬅️ К точке", `pp_open:${id}`)],
+      [Markup.button.callback("🏠 Меню", "menu")],
+    ]).reply_markup,
+  });
 });
 
 // =====================================================
