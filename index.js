@@ -1919,7 +1919,13 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
     methodKey,
   });
 
-  return ctx.reply(promptText, { parse_mode: "Markdown" });
+  return ctx.reply(promptText, {
+    parse_mode: "Markdown",
+    reply_markup: Markup.inlineKeyboard([
+      [Markup.button.callback("⬅️ Назад", `pp_payment_menu:${id}`)],
+      [Markup.button.callback("🏠 Меню", "menu")],
+    ]).reply_markup,
+  });
 });
 
 // =====================================================
