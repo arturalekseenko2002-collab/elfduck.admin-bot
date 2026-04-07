@@ -1863,11 +1863,9 @@ bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
 
 bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return;
-  await ctx.answerCbQuery();
 
   const id = String(ctx.match?.[1] || "").trim();
   const methodKey = String(ctx.match?.[2] || "").trim();
-
   const paymentMethodPromptMeta = {
     blik: {
       title: "BLIK",
@@ -1895,6 +1893,8 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
   const promptText = [
     `Введите настройки для *${promptMeta.title}* в формате:`,
     "",
+    `\`${promptMeta.example}\``,
+    "",
     `Пример для *${promptMeta.title}*:`,
     `\`${promptMeta.example}\``,
   ].join("\n");
@@ -1907,14 +1907,7 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
     methodKey,
   });
 
-  return ctx.reply(promptText, {
-    parse_mode: "Markdown",
-    reply_markup: Markup.inlineKeyboard([
-      [Markup.button.callback("⬅️ К оплатам", `pp_payment_menu:${id}`)],
-      [Markup.button.callback("⬅️ К точке", `pp_open:${id}`)],
-      [Markup.button.callback("🏠 Меню", "menu")],
-    ]).reply_markup,
-  });
+  return ctx.reply(promptText, { parse_mode: "Markdown" });
 });
 
 // =====================================================
