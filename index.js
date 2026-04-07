@@ -170,16 +170,59 @@ const superAdminMainMenu = () =>
 
 const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : managerMainMenu());
 
-const pickupPointManagerMenu = (ppId) =>
-  Markup.inlineKeyboard([
+const pickupPointManagerMenu = (ppId, options = {}) => {
+  const isSuper = options?.isSuper === true;
+
+  const rows = [
     [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
     [Markup.button.callback("🕒 График на сегодня", `pp_edit_today_schedule:${ppId}`)],
-    [Markup.button.callback("🔔 ID канала уведомлений", `pp_edit_orders_chat:${ppId}`)],
-    [Markup.button.callback("📊 ID канала статистики", `pp_edit_stats_chat:${ppId}`)],
+  ];
+
+  if (isSuper) {
+    rows.push(
+      [Markup.button.callback("🔔 ID канала уведомлений", `pp_edit_orders_chat:${ppId}`)],
+      [Markup.button.callback("📊 ID канала статистики", `pp_edit_stats_chat:${ppId}`)],
+    );
+  }
+
+  rows.push(
     [Markup.button.callback("💳 Настроить оплату", `pp_payment_menu:${ppId}`)],
     [Markup.button.callback("⬅️ К списку", "pp_list")],
     [Markup.button.callback("🏠 Меню", "menu")],
-  ]);
+  );
+
+  return Markup.inlineKeyboard(rows);
+};
+
+const isPickupPointManager = async (ctx, pickupPointId) => {
+  if (isSuperAdmin(ctx)) return true;
+
+  const myTelegramId = String(ctx?.from?.id || "").trim();
+  const safePickupPointId = String(pickupPointId || "").trim();
+
+  if (!myTelegramId || !safePickupPointId) return false;
+
+  try {
+    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const data = await r.json().catch(() => ({}));
+
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const point = pickupPoints.find((p) => String(p?._id || "") === safePickupPointId);
+    if (!point) return false;
+
+    return Array.isArray(point.allowedAdminTelegramIds)
+      ? point.allowedAdminTelegramIds.map((x) => String(x)).includes(myTelegramId)
+      : false;
+  } catch (e) {
+    console.error("isPickupPointManager error:", e);
+    return false;
+  }
+};
 
 // =====================================================
 // ===================== BOT STATE ======================
@@ -1552,7 +1595,10 @@ bot.action(/pp_open:(.+)/, async (ctx) => {
 
     return ctx.reply(renderPickupPointPreview(p), {
       parse_mode: "Markdown",
-      reply_markup: (isSuperAdmin(ctx) ? ppMenuKeyboard(id) : pickupPointManagerMenu(id)).reply_markup,
+      reply_markup: (isSuperAdmin(ctx)
+        ? ppMenuKeyboard(id)
+        : pickupPointManagerMenu(id, { isSuper: isSuperAdmin(ctx) })
+      ).reply_markup,
     });
   } catch (e) {
     return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
@@ -1609,6 +1655,96 @@ bot.action(/pp_delete:(.+)/, async (ctx) => {
   } catch (e) {
     return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
   }
+});
+
+bot.action(/pp_edit_address:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  const allowed = await isPickupPointManager(ctx, pickupPointId);
+  if (!allowed) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt",
+    field: "address",
+    ppId: pickupPointId,
+  });
+
+  return ctx.reply("Введите новый *адрес* (или `-` чтобы отменить)", {
+    parse_mode: "Markdown",
+  });
+});
+
+bot.action(/pp_edit_today_schedule:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  const allowed = await isPickupPointManager(ctx, pickupPointId);
+  if (!allowed) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt_today_schedule",
+    pickupPointId,
+  });
+
+  return ctx.reply(
+    "🗓 *График на сегодня*\n\n" +
+      "Отправь одним сообщением:\n" +
+      "`10:00-22:00`\n\n" +
+      "или\n\n" +
+      "`выходной`",
+    { parse_mode: "Markdown" }
+  );
+});
+
+bot.action(/pp_edit_orders_chat:(.+)/, async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt",
+    field: "notificationChatId",
+    ppId: pickupPointId,
+  });
+
+  return ctx.reply("Введите *ID чата* для получения уведомлений о заказах", {
+    parse_mode: "Markdown",
+  });
+});
+
+bot.action(/pp_edit_stats_chat:(.+)/, async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt",
+    field: "statsChatId",
+    ppId: pickupPointId,
+  });
+
+  return ctx.reply("Введите *ID чата* для получения статистики по складу", {
+    parse_mode: "Markdown",
+  });
 });
 
 bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|statsChatId|sortOrder):(.+)/, async (ctx) => {
