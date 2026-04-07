@@ -1825,7 +1825,7 @@ bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
     const point = points.find((x) => String(x._id) === id);
 
     if (!point) return ctx.answerCbQuery("Точка не найдена");
-    
+
 const escapeTelegramMarkdown = (value) =>
   String(value || "")
     .replace(/\\/g, "\\\\")
@@ -1906,8 +1906,6 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
 
   const promptText = [
     `Введите настройки для *${promptMeta.title}* в формате:`,
-    "",
-    `\`${promptMeta.example}\``,
     "",
     `Пример для *${promptMeta.title}*:`,
     `\`${promptMeta.example}\``,
