@@ -1825,24 +1825,38 @@ bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
     const point = points.find((x) => String(x._id) === id);
 
     if (!point) return ctx.answerCbQuery("Точка не найдена");
+    
+const escapeTelegramMarkdown = (value) =>
+  String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\*/g, "\\*")
+    .replace(/_/g, "\\_")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
 
-    const pm = Array.isArray(point?.paymentConfig?.methods) ? point.paymentConfig.methods : [];
-    const paymentMethodsLabel = pm.length
-      ? pm
-          .map((m) => `${String(m?.key || "").trim()}${m?.isActive === false ? " (off)" : ""}`)
-          .filter(Boolean)
-          .join(", ")
-      : "—";
+const pm = Array.isArray(point?.paymentConfig?.methods) ? point.paymentConfig.methods : [];
 
-    const text = [
-      "🏪 *Точка самовывоза — методы оплаты*",
-      "",
-      `Адрес: *${String(point?.address || point?.title || "—")}*`,
-      "",
-      `Способы оплаты: ${paymentMethodsLabel}`,
-      "",
-      "Выберите способ оплаты для настройки:",
-    ].join("\n");
+const paymentMethodsLabel = pm.length
+  ? pm
+      .map((m) => `\`${String(m?.key || "").trim().replace(/`/g, "")}${m?.isActive === false ? " (off)" : ""}\``)
+      .filter(Boolean)
+      .join(", ")
+  : "—";
+
+const safeAddress = escapeTelegramMarkdown(String(point?.address || point?.title || "—"));
+
+const text = [
+  "🏪 *Точка самовывоза — методы оплаты*",
+  "",
+  `Адрес: *${safeAddress}*`,
+  "",
+  `Способы оплаты: ${paymentMethodsLabel}`,
+  "",
+  "Выберите способ оплаты для настройки:",
+].join("\n");
 
     if (ctx.callbackQuery?.message?.photo) {
       await ctx.editMessageCaption(text, {
