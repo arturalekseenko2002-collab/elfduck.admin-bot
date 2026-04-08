@@ -1877,9 +1877,12 @@ const text = [
 
 bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return;
+  await ctx.answerCbQuery();
 
   const id = String(ctx.match?.[1] || "").trim();
   const methodKey = String(ctx.match?.[2] || "").trim();
+  if (!id || !methodKey) return;
+
   const paymentMethodPromptMeta = {
     blik: {
       title: "BLIK",
@@ -1891,7 +1894,7 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
     },
     ua_card: {
       title: "УКР. КАРТА",
-      example: "Украинская карта | 5395 4182 3356 7590 | Перевод | on",
+      example: "Украинская карта | 5395 4182 3356 7590 | Перевод на карту | on",
     },
     cash: {
       title: "НАЛИЧНЫЕ",
@@ -1904,28 +1907,109 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
     example: "Label | detailsValue | badge | on",
   };
 
-  const promptText = [
-    `Введите настройки для *${promptMeta.title}* в формате:`,
-    "",
-    `Пример для *${promptMeta.title}*:`,
-    `\`${promptMeta.example}\``,
-  ].join("\n");
+  try {
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
 
+    const point = points.find((x) => String(x._id) === id);
+    if (!point) return ctx.reply("❌ Точка не найдена.");
+
+    const methods = Array.isArray(point?.paymentConfig?.methods) ? point.paymentConfig.methods : [];
+    const currentMethod = methods.find((m) => String(m?.key || "") === methodKey) || null;
+
+    const currentMethodText = currentMethod
+      ? [
+          `Текущие настройки для *${promptMeta.title}*:`,
+          `\`${String(currentMethod.label || "").trim() || "—"} | ${String(currentMethod.detailsValue || "").trim() || "—"} | ${String(currentMethod.badge || "").trim() || "—"} | ${currentMethod.isActive === false ? "off" : "on"}\``,
+        ].join("\n")
+      : `Текущий метод оплаты для *${promptMeta.title}* не установлен.`;
+
+    const isActive = currentMethod?.isActive !== false;
+    const toggleLabel = isActive ? "🔴 Выключить" : "🟢 Включить";
+
+    const promptText = [
+      `Введите настройки для *${promptMeta.title}* в формате:`,
+      "",
+      currentMethodText,
+      "",
+      `Пример для *${promptMeta.title}*:`,
+      `\`${promptMeta.example}\``,
+    ].join("\n");
+
+    setState(ctx.chat.id, {
+      mode: "pp_payment_prompt",
+      pointId: id,
+      methodKey,
+    });
+
+    return ctx.reply(promptText, {
+      parse_mode: "Markdown",
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(toggleLabel, `pp_pay_toggle:${id}:${methodKey}`)],
+        [Markup.button.callback("⬅️ К оплатам", `pp_payment_menu:${id}`)],
+        [Markup.button.callback("✖️ Отмена", `pp_open:${id}`)],
+      ]).reply_markup,
+    });
+  } catch (e) {
+    console.error(e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action(/pp_pay_toggle:(.+):(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return;
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match?.[1] || "").trim();
+  const methodKey = String(ctx.match?.[2] || "").trim();
   if (!id || !methodKey) return;
 
-  setState(ctx.chat.id, {
-    mode: "pp_payment_prompt",
-    pointId: id,
-    methodKey,
-  });
+  try {
+    const data = await api("/pickup-points?active=0");
+    const points = data.pickupPoints || [];
+    const point = points.find((x) => String(x._id) === id);
 
-  return ctx.reply(promptText, {
-    parse_mode: "Markdown",
-    reply_markup: Markup.inlineKeyboard([
-      [Markup.button.callback("⬅️ Назад", `pp_payment_menu:${id}`)],
-      [Markup.button.callback("🏠 Меню", "menu")],
-    ]).reply_markup,
-  });
+    if (!point) return ctx.reply("❌ Точка не найдена.");
+
+    const methods = Array.isArray(point?.paymentConfig?.methods)
+      ? [...point.paymentConfig.methods]
+      : [];
+
+    const idx = methods.findIndex((m) => String(m?.key || "") === methodKey);
+
+    if (idx >= 0) {
+      methods[idx] = {
+        ...methods[idx],
+        isActive: methods[idx]?.isActive === false ? true : false,
+      };
+    } else {
+      methods.push({
+        key: methodKey,
+        label: "",
+        detailsValue: "",
+        badge: "",
+        isActive: true,
+      });
+    }
+
+    await api(`/admin/pickup-points/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        paymentConfig: { methods },
+      }),
+    });
+
+    return ctx.reply("✅ Статус метода оплаты обновлён.", {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Вернуться к методу", `pp_pay_prompt:${id}:${methodKey}`)],
+        [Markup.button.callback("⬅️ К оплатам", `pp_payment_menu:${id}`)],
+      ]).reply_markup,
+    });
+  } catch (e) {
+    console.error(e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
 });
 
 // =====================================================
@@ -2963,7 +3047,7 @@ bot.on("text", async (ctx) => {
           .split("|")
           .map((x) => String(x || "").trim());
 
-        if (!labelRaw) {
+        if (!labelRaw || !detailsRaw || !badgeRaw) {
           return ctx.reply("❌ Укажите label в формате: label | detailsValue | badge | on/off");
         }
 
