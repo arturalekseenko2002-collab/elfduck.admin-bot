@@ -1961,7 +1961,7 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
       reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback(toggleLabel, `pp_pay_toggle:${id}:${methodKey}`)],
         [Markup.button.callback("⬅️ К оплатам", `pp_payment_menu:${id}`)],
-        [Markup.button.callback("✖️ Отмена", `pp_open:${id}`)],
+        [Markup.button.callback("🏠 Меню", `pp_open:${id}`)],
       ]).reply_markup,
     });
   } catch (e) {
