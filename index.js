@@ -1886,19 +1886,31 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
   const paymentMethodPromptMeta = {
     blik: {
       title: "BLIK",
-      example: "BLIK | +48 573 401 389 | BLIK | on",
+      label: "BLIK",
+      badge: "BLIK",
+      defaultDetailsValue: "+48 573 401 389",
+      example: "+48 573 401 389",
     },
     crypto: {
       title: "Криптовалюта",
-      example: "Криптовалюта | TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a | USDT TRC20 | on",
+      label: "Криптовалюта",
+      badge: "USDT TRC20",
+      defaultDetailsValue: "TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a",
+      example: "TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a",
     },
     ua_card: {
       title: "УКР. КАРТА",
-      example: "Украинская карта | 5395 4182 3356 7590 | Перевод на карту | on",
+      label: "Украинская карта",
+      badge: "Перевод на карту",
+      defaultDetailsValue: "5395 4182 3356 7590",
+      example: "5395 4182 3356 7590",
     },
     cash: {
       title: "НАЛИЧНЫЕ",
-      example: "Наличные | Оплата при получении | Наличные | on",
+      label: "Наличные",
+      badge: "Наличные",
+      defaultDetailsValue: "Оплата при получении",
+      example: "Оплата при получении",
     },
   };
 
@@ -1921,7 +1933,8 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
     const currentMethodText = currentMethod
       ? [
           `Текущие настройки для *${promptMeta.title}*:`,
-          `\`${String(currentMethod.label || "").trim() || "—"} | ${String(currentMethod.detailsValue || "").trim() || "—"} | ${String(currentMethod.badge || "").trim() || "—"} | ${currentMethod.isActive === false ? "off" : "on"}\``,
+          `Реквизиты: \`${String(currentMethod.detailsValue || "").trim() || "—"}\``,
+          `Статус: *${currentMethod.isActive === false ? "off" : "on"}*`,
         ].join("\n")
       : `Текущий метод оплаты для *${promptMeta.title}* не установлен.`;
 
@@ -1929,11 +1942,11 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
     const toggleLabel = isActive ? "🔴 Выключить" : "🟢 Включить";
 
     const promptText = [
-      `Введите настройки для *${promptMeta.title}* в формате:`,
+      `Введите *реквизиты* для *${promptMeta.title}*:`,
       "",
       currentMethodText,
       "",
-      `Пример для *${promptMeta.title}*:`,
+      `Что нужно отправить сейчас:`,
       `\`${promptMeta.example}\``,
     ].join("\n");
 
@@ -3043,12 +3056,39 @@ bot.on("text", async (ctx) => {
 
     if (st.mode === "pp_payment_prompt") {
       try {
-        const [labelRaw, detailsRaw, badgeRaw, activeRaw] = text
-          .split("|")
-          .map((x) => String(x || "").trim());
+        const paymentMethodPromptMeta = {
+          blik: {
+            label: "BLIK",
+            badge: "BLIK",
+            defaultDetailsValue: "+48 573 401 389",
+          },
+          crypto: {
+            label: "Криптовалюта",
+            badge: "USDT TRC20",
+            defaultDetailsValue: "TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a",
+          },
+          ua_card: {
+            label: "Украинская карта",
+            badge: "Перевод на карту",
+            defaultDetailsValue: "5395 4182 3356 7590",
+          },
+          cash: {
+            label: "Наличные",
+            badge: "Наличные",
+            defaultDetailsValue: "Оплата при получении",
+          },
+        };
 
-        if (!labelRaw || !detailsRaw || !badgeRaw) {
-          return ctx.reply("❌ Укажите label в формате: label | detailsValue | badge | on/off");
+        const methodMeta = paymentMethodPromptMeta[String(st.methodKey || "").trim()] || {
+          label: "Способ оплаты",
+          badge: "",
+          defaultDetailsValue: "",
+        };
+
+        const detailsRaw = String(text || "").trim();
+
+        if (!detailsRaw) {
+          return ctx.reply("❌ Отправьте только реквизиты для выбранного способа оплаты.");
         }
 
         const data = await api(`/pickup-points?active=0`);
@@ -3070,10 +3110,10 @@ bot.on("text", async (ctx) => {
 
         const nextMethod = {
           key: st.methodKey,
-          label: labelRaw,
-          detailsValue: detailsRaw || "",
-          badge: badgeRaw || "",
-          isActive: String(activeRaw || "on").toLowerCase() !== "off",
+          label: methodMeta.label,
+          detailsValue: detailsRaw || methodMeta.defaultDetailsValue || "",
+          badge: methodMeta.badge,
+          isActive: idx >= 0 ? methods[idx]?.isActive !== false : true,
         };
 
         if (idx >= 0) methods[idx] = nextMethod;
