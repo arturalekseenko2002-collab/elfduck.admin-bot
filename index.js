@@ -1889,7 +1889,7 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
       example: "BLIK | +48 573 401 389 | BLIK | on",
     },
     crypto: {
-      title: "КРИПТОВАЛЮТА",
+      title: "Криптовалюта",
       example: "Криптовалюта | TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a | USDT TRC20 | on",
     },
     ua_card: {
