@@ -1934,7 +1934,7 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
       ? [
           `Текущие настройки для *${promptMeta.title}*:`,
           `Реквизиты: \`${String(currentMethod.detailsValue || "").trim() || "—"}\``,
-          `Статус: *${currentMethod.isActive === false ? "off" : "on"}*`,
+          `Статус: *${currentMethod.isActive === false ? "выключен" : "включен"}*`,
         ].join("\n")
       : `Текущий метод оплаты для *${promptMeta.title}* не установлен.`;
 
