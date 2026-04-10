@@ -175,7 +175,7 @@ const pickupPointManagerMenu = (ppId, options = {}) => {
 
   const rows = [
     [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
-    [Markup.button.callback("🕒 График на сегодня", `pp_edit_today_schedule:${ppId}`)],
+    [Markup.button.callback("🕒 График / периоды на сегодня", `pp_edit_today_schedule:${ppId}`)],
   ];
 
   if (isSuper) {
@@ -1715,9 +1715,11 @@ bot.action(/pp_edit_today_schedule:(.+)/, async (ctx) => {
 
   return ctx.reply(
     "🗓 *График на сегодня*\n\n" +
-      "Отправь одним сообщением:\n" +
-      "`10:00-22:00`\n\n" +
-      "или\n\n" +
+      "Отправь *одним сообщением* один или несколько периодов.\n\n" +
+      "Примеры:\n" +
+      "`10:00-22:00`\n" +
+      "`10:00-14:00, 16:00-22:00`\n\n" +
+      "Если точка сегодня не работает, отправь:\n" +
       "`выходной`",
     {
       parse_mode: "Markdown",
@@ -3225,29 +3227,98 @@ bot.on("text", async (ctx) => {
           isOpen: false,
           from: "",
           to: "",
+          periods: [],
           note: "выходной",
         };
       } else {
-        const m = text.match(/^([0-2]\d):([0-5]\d)\s*-\s*([0-2]\d):([0-5]\d)$/);
+        const chunks = text
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
 
-        if (!m) {
+        if (!chunks.length) {
           return ctx.reply(
             "❌ Неверный формат.\n\n" +
               "Используй:\n" +
-              "`10:00-22:00`\n\n" +
+              "`10:00-22:00`\n" +
+              "`10:00-14:00, 16:00-22:00`\n\n" +
               "или\n\n" +
               "`выходной`",
             { parse_mode: "Markdown" }
           );
         }
 
-        const from = `${m[1]}:${m[2]}`;
-        const to = `${m[3]}:${m[4]}`;
+        const periods = [];
+
+        for (const chunk of chunks) {
+          const m = chunk.match(/^([0-2]\d):([0-5]\d)\s*-\s*([0-2]\d):([0-5]\d)$/);
+
+          if (!m) {
+            return ctx.reply(
+              "❌ Неверный формат.\n\n" +
+                "Используй:\n" +
+                "`10:00-22:00`\n" +
+                "`10:00-14:00, 16:00-22:00`\n\n" +
+                "или\n\n" +
+                "`выходной`",
+              { parse_mode: "Markdown" }
+            );
+          }
+
+          const from = `${m[1]}:${m[2]}`;
+          const to = `${m[3]}:${m[4]}`;
+
+          const fromMinutes = Number(m[1]) * 60 + Number(m[2]);
+          const toMinutes = Number(m[3]) * 60 + Number(m[4]);
+
+          if (toMinutes <= fromMinutes) {
+            return ctx.reply(
+              `❌ Период \`${chunk}\` неверный: время окончания должно быть позже времени начала.`,
+              { parse_mode: "Markdown" }
+            );
+          }
+
+          periods.push({
+            openFrom: from,
+            openTo: to,
+            from,
+            to,
+          });
+        }
+
+        periods.sort((a, b) => {
+          const aMinutes =
+            Number(String(a.openFrom).slice(0, 2)) * 60 +
+            Number(String(a.openFrom).slice(3, 5));
+          const bMinutes =
+            Number(String(b.openFrom).slice(0, 2)) * 60 +
+            Number(String(b.openFrom).slice(3, 5));
+          return aMinutes - bMinutes;
+        });
+
+        for (let i = 1; i < periods.length; i++) {
+          const prevTo =
+            Number(String(periods[i - 1].openTo).slice(0, 2)) * 60 +
+            Number(String(periods[i - 1].openTo).slice(3, 5));
+          const currFrom =
+            Number(String(periods[i].openFrom).slice(0, 2)) * 60 +
+            Number(String(periods[i].openFrom).slice(3, 5));
+
+          if (currFrom < prevTo) {
+            return ctx.reply(
+              "❌ Периоды пересекаются. Проверь интервалы и попробуй снова.",
+              { parse_mode: "Markdown" }
+            );
+          }
+        }
 
         scheduleValue = {
           isOpen: true,
-          from,
-          to,
+          from: periods[0].openFrom,
+          to: periods[periods.length - 1].openTo,
+          openFrom: periods[0].openFrom,
+          openTo: periods[periods.length - 1].openTo,
+          periods,
           note: "",
         };
       }
@@ -3267,7 +3338,9 @@ bot.on("text", async (ctx) => {
         await ctx.reply(
           `✅ График на сегодня сохранён:\n\n${todayKey}\n${
             scheduleValue.isOpen
-              ? `${scheduleValue.from}-${scheduleValue.to}`
+              ? (Array.isArray(scheduleValue.periods) && scheduleValue.periods.length
+                  ? scheduleValue.periods.map((p) => `${p.openFrom}-${p.openTo}`).join(", ")
+                  : `${scheduleValue.from}-${scheduleValue.to}`)
               : "выходной"
           }`
         );
