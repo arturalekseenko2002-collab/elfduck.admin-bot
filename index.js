@@ -175,7 +175,7 @@ const pickupPointManagerMenu = (ppId, options = {}) => {
 
   const rows = [
     [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
-    [Markup.button.callback("🕒 График / периоды на сегодня", `pp_edit_today_schedule:${ppId}`)],
+    [Markup.button.callback("🕒 График / периоды на сегмодня", `pp_edit_today_schedule:${ppId}`)],
   ];
 
   if (isSuper) {
