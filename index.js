@@ -2422,7 +2422,11 @@ bot.action("fl_bulk_edit_start", async (ctx) => {
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "fl_builder") return;
 
-  st.step = FL_BUILDER_STEPS.indexOf("bulkEdit");
+  st.data.bulkEditText = "";
+  st.data.bulkEdits = [];
+  st.step = st.data.pickupPointId
+    ? FL_BUILDER_STEPS.indexOf("bulkEdit")
+    : FL_BUILDER_STEPS.indexOf("pickupPoint");
   setState(ctx.chat.id, st);
   return askFlavorStep(ctx);
 });
