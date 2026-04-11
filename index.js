@@ -457,6 +457,7 @@ const FL_BUILDER_STEPS = [
   "mode",         // новый вкус или наличие существующего
   "newFlavor",    // ввод label + 2 цвета
   "pickFlavor",   // выбрать существующий вкус
+  "bulkEdit",
   "pickupPoint",  // выбрать точку
   "qty",          // ввести количество
   "confirm",      // подтвердить
@@ -466,19 +467,20 @@ const defaultFlavorBuilderData = () => ({
   productId: "",
   productTitle: "",
 
-  mode: "", // "new" | "stock"
+  mode: "",
 
-  // flavor meta
   flavorId: "",
   flavorKey: "",
   label: "",
   gradient: ["", ""],
 
-  // stock target
   pickupPointId: "",
   pickupPointLabel: "",
 
   totalQty: null,
+
+  bulkEditText: "",
+  bulkEdits: [],
 });
 
 const renderFlavorBuilderPreview = (d = {}) => {
@@ -507,6 +509,8 @@ const renderFlavorBuilderPreview = (d = {}) => {
   if (typeof d.totalQty === "number") {
     lines.push(`Количество: *${d.totalQty}*`);
   }
+
+  if (d.bulkEditText) lines.push(`Массовое изменение: *да*`);
 
   return lines.join("\n");
 };
@@ -616,6 +620,7 @@ const askFlavorStep = async (ctx) => {
     }
 
     const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✏️ Массово изменить", "fl_bulk_edit_start")],
       ...flavors.map((f) => [
         Markup.button.callback(f.label || f.flavorKey, `fl_pick_flavor:${f._id}`),
       ]),
@@ -626,6 +631,43 @@ const askFlavorStep = async (ctx) => {
       photoUrl: "",
       caption: `${preview}\n\nВыберите *вкус*:`,
       keyboard: kb,
+    });
+  }
+
+  // 5) bulk edit for all flavors of one product
+  if (step === "bulkEdit") {
+    const r = await fetch(`${API_URL}/products?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const products = data.products || [];
+    const prod = products.find((p) => String(p._id) === String(d.productId));
+    const flavors = Array.isArray(prod?.flavors) ? prod.flavors.filter((f) => f.isActive !== false) : [];
+
+    if (!flavors.length) {
+      st.step = FL_BUILDER_STEPS.indexOf("newFlavor");
+      st.data.mode = "new";
+      setState(ctx.chat.id, st);
+      return askFlavorStep(ctx);
+    }
+
+    const flavorLines = flavors.map((f, index) => {
+      const label = String(f?.label || f?.flavorKey || `Вкус ${index + 1}`).trim();
+      return `${index + 1}. ${label}`;
+    });
+
+    const caption =
+      `${preview}\n\n` +
+      `Отправь изменения *одним сообщением*, каждый вкус с новой цифрой с новой строки.\n\n` +
+      `Поддерживаются оба формата:\n` +
+      `\`1=10\`\n` +
+      `\`Blueberry Ice=10\`\n\n` +
+      `Список вкусов товара:\n\n${flavorLines.join("\n")}`;
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+      ]),
     });
   }
 
@@ -2363,6 +2405,18 @@ bot.action(/fl_set_mode:(new|stock)/, async (ctx) => {
   return askFlavorStep(ctx);
 });
 
+bot.action("fl_bulk_edit_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  st.step = FL_BUILDER_STEPS.indexOf("bulkEdit");
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
 bot.action(/fl_pick_flavor:(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
@@ -2402,6 +2456,30 @@ bot.action(/fl_pick_point:(.+)/, async (ctx) => {
 
   st.data.pickupPointId = id;
   st.data.pickupPointLabel = p?.address || "—";
+
+  if (Array.isArray(st.data.bulkEdits) && st.data.bulkEdits.length) {
+    try {
+      for (const row of st.data.bulkEdits) {
+        await api(`/admin/products/${st.data.productId}/flavors/${row.flavorId}/stock`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            pickupPointId: st.data.pickupPointId,
+            totalQty: row.totalQty,
+          }),
+        });
+      }
+
+      clearState(ctx.chat.id);
+      return ctx.reply(
+        `✅ Массовое изменение сохранено.\n\nИзменено вкусов: ${st.data.bulkEdits.length}`,
+        mainMenu(ctx)
+      );
+    } catch (e) {
+      return ctx.reply(`❌ Ошибка: ${e.message}`);
+    }
+  }
+
+  
 
   // дальше qty
   st.step = FL_BUILDER_STEPS.indexOf("qty");
@@ -3045,6 +3123,107 @@ bot.on("text", async (ctx) => {
           st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
           setState(ctx.chat.id, st);
           return askFlavorStep(ctx);
+        }
+
+        if (FL_BUILDER_STEPS[st.step] === "bulkEdit") {
+          const raw = String(text || "").trim();
+
+          if (!raw) {
+            return ctx.reply(
+              "❌ Отправь хотя бы одно изменение в формате `1=10` или `Blueberry Ice=10`.",
+              { parse_mode: "Markdown" }
+            );
+          }
+
+          try {
+            const r = await fetch(`${API_URL}/products?active=0`);
+            const data = await r.json().catch(() => ({}));
+            const products = data.products || [];
+            const prod = products.find((p) => String(p._id) === String(st.data.productId));
+            const flavors = Array.isArray(prod?.flavors) ? prod.flavors.filter((f) => f.isActive !== false) : [];
+
+            if (!prod || !flavors.length) {
+              return ctx.reply("❌ Не удалось загрузить вкусы товара.");
+            }
+
+            const byIndex = new Map();
+            const byName = new Map();
+
+            flavors.forEach((f, index) => {
+              const label = String(f?.label || f?.flavorKey || "").trim();
+              byIndex.set(String(index + 1), f);
+              if (label) byName.set(label.toLowerCase(), f);
+            });
+
+            const lines = raw
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean);
+
+            const parsed = [];
+
+            for (const line of lines) {
+              const parts = line.split("=");
+              if (parts.length !== 2) {
+                return ctx.reply(
+                  `❌ Неверный формат строки: ${line}\nИспользуй \`1=10\` или \`Blueberry Ice=10\`.`,
+                  { parse_mode: "Markdown" }
+                );
+              }
+
+              const left = String(parts[0] || "").trim();
+              const right = String(parts[1] || "").trim();
+              const qty = Number(right);
+
+              if (!left || !Number.isFinite(qty) || qty < 0) {
+                return ctx.reply(`❌ Неверное количество в строке: ${line}`);
+              }
+
+              let flavor = byIndex.get(left);
+              if (!flavor) {
+                flavor = byName.get(left.toLowerCase());
+              }
+
+              if (!flavor) {
+                return ctx.reply(`❌ Не найден вкус: ${left}`);
+              }
+
+              parsed.push({
+                flavorId: String(flavor._id || ""),
+                flavorKey: String(flavor.flavorKey || ""),
+                label: String(flavor.label || flavor.flavorKey || ""),
+                totalQty: qty,
+              });
+            }
+
+            const pointId = String(st.data.pickupPointId || "").trim();
+
+            if (!pointId) {
+              st.data.bulkEditText = raw;
+              st.data.bulkEdits = parsed;
+              st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
+              setState(ctx.chat.id, st);
+              return askFlavorStep(ctx);
+            }
+
+            for (const row of parsed) {
+              await api(`/admin/products/${st.data.productId}/flavors/${row.flavorId}/stock`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                  pickupPointId: pointId,
+                  totalQty: row.totalQty,
+                }),
+              });
+            }
+
+            clearState(ctx.chat.id);
+            return ctx.reply(
+              `✅ Массовое изменение сохранено.\n\nИзменено вкусов: ${parsed.length}`,
+              mainMenu(ctx)
+            );
+          } catch (e) {
+            return ctx.reply(`❌ Ошибка: ${e.message}`);
+          }
         }
 
         // qty
