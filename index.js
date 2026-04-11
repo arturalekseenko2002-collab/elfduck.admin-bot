@@ -636,6 +636,12 @@ const askFlavorStep = async (ctx) => {
 
   // 5) bulk edit for all flavors of one product
   if (step === "bulkEdit") {
+    if (!d.pickupPointId) {
+      st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
+      setState(ctx.chat.id, st);
+      return askFlavorStep(ctx);
+    }
+
     const r = await fetch(`${API_URL}/products?active=0`);
     const data = await r.json().catch(() => ({}));
     const products = data.products || [];
@@ -649,18 +655,22 @@ const askFlavorStep = async (ctx) => {
       return askFlavorStep(ctx);
     }
 
-    const flavorLines = flavors.map((f, index) => {
-      const label = String(f?.label || f?.flavorKey || `Вкус ${index + 1}`).trim();
-      return `${index + 1}. ${label}`;
+    const flavorLines = flavors.map((f) => {
+      const label = String(f?.label || f?.flavorKey || "Вкус").trim();
+      const stockRow = (Array.isArray(f?.stockByPickupPoint) ? f.stockByPickupPoint : []).find(
+        (row) => String(row?.pickupPointId || "") === String(d.pickupPointId || "")
+      );
+      const currentQty = Math.max(0, Number(stockRow?.totalQty || 0));
+      return `${label}=${currentQty}`;
     });
 
     const caption =
       `${preview}\n\n` +
       `Отправь изменения *одним сообщением*, каждый вкус с новой цифрой с новой строки.\n\n` +
       `Поддерживаются оба формата:\n` +
-      `\`1=10\`\n` +
-      `\`Blueberry Ice=10\`\n\n` +
-      `Список вкусов товара:\n\n${flavorLines.join("\n")}`;
+      `\`Blueberry Ice=10\`\n` +
+      `\`1=10\`\n\n` +
+      `Скопируй список ниже, отредактируй цифры и отправь обратно:\n\n${flavorLines.join("\n")}`;
 
     return sendStepCard(ctx, {
       photoUrl: "",
@@ -3199,11 +3209,7 @@ bot.on("text", async (ctx) => {
             const pointId = String(st.data.pickupPointId || "").trim();
 
             if (!pointId) {
-              st.data.bulkEditText = raw;
-              st.data.bulkEdits = parsed;
-              st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
-              setState(ctx.chat.id, st);
-              return askFlavorStep(ctx);
+              return ctx.reply("❌ Сначала выбери точку самовывоза для массового изменения.");
             }
 
             for (const row of parsed) {
