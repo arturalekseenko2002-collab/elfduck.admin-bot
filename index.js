@@ -670,7 +670,8 @@ const askFlavorStep = async (ctx) => {
       `Поддерживаются оба формата:\n` +
       `\`Blueberry Ice=10\`\n` +
       `\`1=10\`\n\n` +
-      `Скопируй список ниже, отредактируй цифры и отправь обратно:\n\n${flavorLines.join("\n")}`;
+      `Скопируй список ниже, отредактируй цифры и отправь обратно:\n\n` +
+      `\`\`\`\n${flavorLines.join("\n")}\n\`\`\``;
 
     return sendStepCard(ctx, {
       photoUrl: "",
