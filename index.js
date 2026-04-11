@@ -2496,6 +2496,13 @@ bot.action(/fl_pick_point:(.+)/, async (ctx) => {
   
 
   // дальше qty
+  if (FL_BUILDER_STEPS[st.step] === "pickupPoint" && st.data.mode === "stock" && !st.data.flavorId) {
+    st.step = FL_BUILDER_STEPS.indexOf("bulkEdit");
+    setState(ctx.chat.id, st);
+    return askFlavorStep(ctx);
+  }
+
+  // дальше qty
   st.step = FL_BUILDER_STEPS.indexOf("qty");
   setState(ctx.chat.id, st);
   return askFlavorStep(ctx);
