@@ -279,7 +279,7 @@ const defaultCourierMessageData = () => ({
   pickupPointId: "",
   username: "",
   text: "",
-  photoFileId: "",
+  photoUrl: "",
 });
 
 const renderCourierMessagePreview = (d = {}) => {
@@ -288,7 +288,7 @@ const renderCourierMessagePreview = (d = {}) => {
   lines.push("");
   lines.push(`• username: *${d.username || "—"}*`);
   lines.push(`• текст: ${d.text ? `*${d.text}*` : "—"}`);
-  lines.push(`• фото: ${d.photoFileId ? "*прикреплено*" : "—"}`);
+  lines.push(`• фото: ${d.photoUrl ? "*прикреплено*" : "—"}`);
   return lines.join("\n");
 };
 
@@ -2358,7 +2358,7 @@ bot.action("courier_msg_confirm", async (ctx) => {
         pickupPointId: d.pickupPointId,
         username: d.username,
         text: d.text,
-        photoFileId: d.photoFileId || "",
+        photoUrl: d.photoUrl || "",
         managerTelegramId: String(ctx.from?.id || ""),
         managerUsername: String(ctx.from?.username || ""),
       }),
@@ -4015,9 +4015,20 @@ bot.on("photo", async (ctx, next) => {
       return ctx.reply("❌ Не удалось прочитать фото. Попробуйте отправить ещё раз.");
     }
 
-    st.data.photoFileId = fileId;
+    const file = await ctx.telegram.getFile(fileId);
+    const filePath = String(file?.file_path || "").trim();
+
+    if (!filePath) {
+      return ctx.reply("❌ Не удалось получить путь к фото. Попробуйте ещё раз.");
+    }
+
+    const photoUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+
+    st.data = st.data || {};
+    st.data.photoUrl = "";
     st.step = 3;
     setState(ctx.chat.id, st);
+
     return askCourierMessageStep(ctx);
   } catch (e) {
     console.error("courier_msg photo handler error:", e);
