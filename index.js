@@ -2233,6 +2233,54 @@ bot.action(/pp_pay_toggle:(.+):(.+)/, async (ctx) => {
   }
 });
 
+bot.action("courier_msg_main", async (ctx) => {
+  try {
+    const isCourier = await isCourierManager(ctx);
+    if (!isCourier && !isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+    }
+
+    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const courierPoint = pickupPoints.find(
+      (p) => String(p?.key || "").trim().replace(/,+$/, "") === "delivery"
+    );
+
+    if (!courierPoint?._id) {
+      return ctx.answerCbQuery("Точка delivery не найдена", { show_alert: true });
+    }
+
+    if (!ctx.from?.username) {
+      await ctx.answerCbQuery();
+      return ctx.reply(
+        "❌ У вас должен быть установлен Telegram username, чтобы клиент мог связаться с курьером.",
+        mainMenu(ctx)
+      );
+    }
+
+    setState(ctx.chat.id, {
+      mode: "courier_msg",
+      step: 0,
+      data: {
+        ...defaultCourierMessageData(),
+        pickupPointId: String(courierPoint._id),
+      },
+    });
+
+    await ctx.answerCbQuery();
+    return askCourierMessageStep(ctx);
+  } catch (e) {
+    console.error("courier_msg_main error:", e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
 bot.action(/^courier_msg_start:(.+)$/, async (ctx) => {
   try {
     const pickupPointId = String(ctx.match[1] || "").trim();
