@@ -4003,7 +4003,7 @@ bot.on("text", async (ctx) => {
 bot.on("photo", async (ctx, next) => {
   try {
     const st = getState(ctx.chat.id);
-    if (!st || st.mode !== "courier_msg" || st.step !== 2) {
+    if (!st || st.mode !== "courier_msg" || Number(st.step) !== 2) {
       return next();
     }
 
@@ -4025,14 +4025,14 @@ bot.on("photo", async (ctx, next) => {
     const photoUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
 
     st.data = st.data || {};
-    st.data.photoUrl = "";
+    st.data.photoUrl = photoUrl;
     st.step = 3;
     setState(ctx.chat.id, st);
 
     return askCourierMessageStep(ctx);
   } catch (e) {
     console.error("courier_msg photo handler error:", e);
-    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
   }
 });
 
