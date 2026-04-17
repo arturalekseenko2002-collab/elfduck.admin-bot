@@ -279,8 +279,7 @@ const defaultCourierMessageData = () => ({
   pickupPointId: "",
   username: "",
   text: "",
-  photoUrl: "",
-  buttonText: "Связаться с курьером",
+  photoFileId: "",
 });
 
 const renderCourierMessagePreview = (d = {}) => {
@@ -289,8 +288,7 @@ const renderCourierMessagePreview = (d = {}) => {
   lines.push("");
   lines.push(`• username: *${d.username || "—"}*`);
   lines.push(`• текст: ${d.text ? `*${d.text}*` : "—"}`);
-  lines.push(`• фото: ${d.photoUrl ? d.photoUrl : "—"}`);
-  lines.push(`• текст кнопки: *${d.buttonText || "Связаться с курьером"}*`);
+  lines.push(`• фото: ${d.photoFileId ? "*прикреплено*" : "—"}`);
   return lines.join("\n");
 };
 
@@ -328,7 +326,7 @@ const askCourierMessageStep = async (ctx) => {
 
   if (st.step === 2) {
     return ctx.reply(
-      `${preview}\n\nОтправьте *ссылку на картинку* или \`-\`, если без картинки`,
+      `${preview}\n\nПрикрепите *фото* одним сообщением или отправьте \`-\`, если без картинки`,
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
@@ -341,20 +339,20 @@ const askCourierMessageStep = async (ctx) => {
     );
   }
 
-  if (st.step === 3) {
-    return ctx.reply(
-      `${preview}\n\nВведите *текст кнопки* или \`-\`, чтобы оставить стандартный`,
-      {
-        parse_mode: "Markdown",
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback("⬅️ Назад", "courier_msg_back"),
-            Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
-          ],
-        ]),
-      }
-    );
-  }
+  // if (st.step === 3) {
+  //   return ctx.reply(
+  //     `${preview}\n\nВведите *текст кнопки* или \`-\`, чтобы оставить стандартный`,
+  //     {
+  //       parse_mode: "Markdown",
+  //       ...Markup.inlineKeyboard([
+  //         [
+  //           Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+  //           Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+  //         ],
+  //       ]),
+  //     }
+  //   );
+  // }
 
   return ctx.reply(
     `${preview}\n\nОтправить это сообщение клиенту?`,
@@ -2360,8 +2358,7 @@ bot.action("courier_msg_confirm", async (ctx) => {
         pickupPointId: d.pickupPointId,
         username: d.username,
         text: d.text,
-        photoUrl: d.photoUrl,
-        buttonText: d.buttonText || "Связаться с курьером",
+        photoFileId: d.photoFileId || "",
         managerTelegramId: String(ctx.from?.id || ""),
         managerUsername: String(ctx.from?.username || ""),
       }),
@@ -3948,15 +3945,14 @@ bot.on("text", async (ctx) => {
         }
 
         if (st.step === 2) {
-          st.data.photoUrl = text === "-" ? "" : text;
-          st.step = 3;
-          setState(ctx.chat.id, st);
-          return askCourierMessageStep(ctx);
-        }
+          if (text !== "-") {
+            return ctx.reply(
+              "❌ На этом шаге прикрепите фото сообщением или отправьте '-' если фото не нужно."
+            );
+          }
 
-        if (st.step === 3) {
-          st.data.buttonText = text === "-" ? "Связаться с курьером" : text;
-          st.step = 4;
+          st.data.photoFileId = "";
+          st.step = 3;
           setState(ctx.chat.id, st);
           return askCourierMessageStep(ctx);
         }
@@ -3993,6 +3989,31 @@ bot.on("text", async (ctx) => {
   setState(ctx.chat.id, st);
   return nextStep(ctx);
 }
+
+  bot.on("photo", async (ctx, next) => {
+    try {
+      const st = getState(ctx.chat.id);
+      if (!st || st.mode !== "courier_msg" || st.step !== 2) {
+        return next();
+      }
+
+      const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+      const bestPhoto = photos[photos.length - 1];
+      const fileId = String(bestPhoto?.file_id || "").trim();
+
+      if (!fileId) {
+        return ctx.reply("❌ Не удалось прочитать фото. Попробуйте отправить ещё раз.");
+      }
+
+      st.data.photoFileId = fileId;
+      st.step = 3;
+      setState(ctx.chat.id, st);
+      return askCourierMessageStep(ctx);
+    } catch (e) {
+      console.error("courier_msg photo handler error:", e);
+      return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+    }
+  });
 
   // sortOrder
   if (step === "sortOrder") {
