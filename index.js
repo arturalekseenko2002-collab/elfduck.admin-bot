@@ -3990,6 +3990,16 @@ bot.on("text", async (ctx) => {
   return nextStep(ctx);
 }
 
+  // sortOrder
+  if (step === "sortOrder") {
+    const n = Number(text);
+    if (Number.isNaN(n)) return ctx.reply("❌ sortOrder должен быть числом (0,1,2...)");
+    st.data.sortOrder = n;
+    setState(ctx.chat.id, st);
+    return nextStep(ctx);
+  }
+});
+
   bot.on("photo", async (ctx, next) => {
     try {
       const st = getState(ctx.chat.id);
@@ -4014,16 +4024,6 @@ bot.on("text", async (ctx) => {
       return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
     }
   });
-
-  // sortOrder
-  if (step === "sortOrder") {
-    const n = Number(text);
-    if (Number.isNaN(n)) return ctx.reply("❌ sortOrder должен быть числом (0,1,2...)");
-    st.data.sortOrder = n;
-    setState(ctx.chat.id, st);
-    return nextStep(ctx);
-  }
-});
 
 // =====================================================
 // ===================== BOT START ======================
