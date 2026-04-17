@@ -173,6 +173,9 @@ const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : managerMai
 const pickupPointManagerMenu = (ppId, options = {}) => {
   const isSuper = options?.isSuper === true;
 
+  const pointKey = String(options?.pointKey || "").trim().replace(/,+$/, "");
+  const canSendCourierMessage = pointKey === "delivery";
+
   const rows = [
     [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
     [Markup.button.callback("🕒 График на сегодня", `pp_edit_today_schedule:${ppId}`)],
@@ -183,6 +186,10 @@ const pickupPointManagerMenu = (ppId, options = {}) => {
       [Markup.button.callback("🔔 ID канала уведомлений", `pp_edit_orders_chat:${ppId}`)],
       [Markup.button.callback("📊 ID канала статистики", `pp_edit_stats_chat:${ppId}`)],
     );
+  }
+
+  if (canSendCourierMessage) {
+    rows.push([Markup.button.callback("📨 Сообщение клиенту", `courier_msg_start:${ppId}`)]);
   }
 
   rows.push(
@@ -224,6 +231,37 @@ const isPickupPointManager = async (ctx, pickupPointId) => {
   }
 };
 
+const isCourierManager = async (ctx) => {
+  if (isSuperAdmin(ctx)) return true;
+
+  const myTelegramId = String(ctx?.from?.id || "").trim();
+  if (!myTelegramId) return false;
+
+  try {
+    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const data = await r.json().catch(() => ({}));
+
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const courierPoint = pickupPoints.find(
+      (p) => String(p?.key || "").trim().replace(/,+$/, "") === "delivery"
+    );
+
+    if (!courierPoint) return false;
+
+    return Array.isArray(courierPoint.allowedAdminTelegramIds)
+      ? courierPoint.allowedAdminTelegramIds.map((x) => String(x)).includes(myTelegramId)
+      : false;
+  } catch (e) {
+    console.error("isCourierManager error:", e);
+    return false;
+  }
+};
+
 // =====================================================
 // ===================== BOT STATE ======================
 // =====================================================
@@ -235,6 +273,101 @@ const defaultCashbackGrantData = () => ({
   username: "",
   amountZl: 0,
 });
+const defaultCourierMessageData = () => ({
+  pickupPointId: "",
+  username: "",
+  text: "",
+  photoUrl: "",
+  buttonText: "Связаться с курьером",
+});
+
+const renderCourierMessagePreview = (d = {}) => {
+  const lines = [];
+  lines.push("📨 *Сообщение клиенту от курьера*");
+  lines.push("");
+  lines.push(`• username: *${d.username || "—"}*`);
+  lines.push(`• текст: ${d.text ? `*${d.text}*` : "—"}`);
+  lines.push(`• фото: ${d.photoUrl ? d.photoUrl : "—"}`);
+  lines.push(`• текст кнопки: *${d.buttonText || "Связаться с курьером"}*`);
+  return lines.join("\n");
+};
+
+const askCourierMessageStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "courier_msg") return;
+
+  const d = st.data || {};
+  const preview = renderCourierMessagePreview(d);
+
+  if (st.step === 0) {
+    return ctx.reply(
+      `${preview}\n\nВведите *username клиента* в формате: \`@username\``,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("✖️ Отмена", "courier_msg_cancel")]]),
+      }
+    );
+  }
+
+  if (st.step === 1) {
+    return ctx.reply(
+      `${preview}\n\nВведите *текст сообщения* для клиента`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+            Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+          ],
+        ]),
+      }
+    );
+  }
+
+  if (st.step === 2) {
+    return ctx.reply(
+      `${preview}\n\nОтправьте *ссылку на картинку* или \`-\`, если без картинки`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+            Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+          ],
+        ]),
+      }
+    );
+  }
+
+  if (st.step === 3) {
+    return ctx.reply(
+      `${preview}\n\nВведите *текст кнопки* или \`-\`, чтобы оставить стандартный`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+            Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+          ],
+        ]),
+      }
+    );
+  }
+
+  return ctx.reply(
+    `${preview}\n\nОтправить это сообщение клиенту?`,
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Отправить", "courier_msg_confirm")],
+        [
+          Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+          Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+        ],
+      ]),
+    }
+  );
+};
 
 // =====================================================
 // ================= CASHBACK GRANT WIZARD ==============
@@ -1662,7 +1795,10 @@ bot.action(/pp_open:(.+)/, async (ctx) => {
       parse_mode: "Markdown",
       reply_markup: (isSuperAdmin(ctx)
         ? ppMenuKeyboard(id)
-        : pickupPointManagerMenu(id, { isSuper: isSuperAdmin(ctx) })
+        : pickupPointManagerMenu(id, {
+            isSuper: isSuperAdmin(ctx),
+            pointKey: p?.key,
+          })
       ).reply_markup,
     });
   } catch (e) {
@@ -1693,7 +1829,14 @@ bot.action(/pp_toggle:(.+)/, async (ctx) => {
 
     return ctx.reply(renderPickupPointPreview(fresh), {
       parse_mode: "Markdown",
-      reply_markup: (isSuperAdmin(ctx) ? ppMenuKeyboard(id) : pickupPointManagerMenu(id)).reply_markup,
+      reply_markup: (
+        isSuperAdmin(ctx)
+          ? ppMenuKeyboard(id)
+          : pickupPointManagerMenu(id, {
+              isSuper: false,
+              pointKey: fresh?.key,
+            })
+      ).reply_markup,
     });
   } catch (e) {
     return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
@@ -2084,6 +2227,105 @@ bot.action(/pp_pay_toggle:(.+):(.+)/, async (ctx) => {
     });
   } catch (e) {
     console.error(e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action(/^courier_msg_start:(.+)$/, async (ctx) => {
+  try {
+    const pickupPointId = String(ctx.match[1] || "").trim();
+
+    if (!pickupPointId) {
+      return ctx.answerCbQuery("Точка не найдена");
+    }
+
+    const allowed = await isPickupPointManager(ctx, pickupPointId);
+    if (!allowed && !isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+    }
+
+    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const point = pickupPoints.find((p) => String(p?._id || "") === pickupPointId);
+    const pointKey = String(point?.key || "").trim().replace(/,+$/, "");
+
+    if (pointKey !== "delivery") {
+      return ctx.answerCbQuery("Только для курьера", { show_alert: true });
+    }
+
+    if (!ctx.from?.username) {
+      return ctx.reply("❌ У вас должен быть установлен Telegram username, чтобы клиент мог связаться с курьером.");
+    }
+
+    setState(ctx.chat.id, {
+      mode: "courier_msg",
+      step: 0,
+      data: {
+        ...defaultCourierMessageData(),
+        pickupPointId,
+      },
+    });
+
+    await ctx.answerCbQuery();
+    return askCourierMessageStep(ctx);
+  } catch (e) {
+    console.error("courier_msg_start error:", e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action("courier_msg_back", async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "courier_msg") return ctx.answerCbQuery();
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+
+  await ctx.answerCbQuery();
+  return askCourierMessageStep(ctx);
+});
+
+bot.action("courier_msg_cancel", async (ctx) => {
+  clearState(ctx.chat.id);
+  await ctx.answerCbQuery("Отменено");
+  return ctx.reply("❌ Отправка сообщения отменена", mainMenu(ctx));
+});
+
+bot.action("courier_msg_confirm", async (ctx) => {
+  try {
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "courier_msg") return ctx.answerCbQuery();
+
+    const d = st.data || {};
+
+    const result = await api("/admin/courier/customer-message", {
+      method: "POST",
+      body: JSON.stringify({
+        pickupPointId: d.pickupPointId,
+        username: d.username,
+        text: d.text,
+        photoUrl: d.photoUrl,
+        buttonText: d.buttonText || "Связаться с курьером",
+        managerTelegramId: String(ctx.from?.id || ""),
+        managerUsername: String(ctx.from?.username || ""),
+      }),
+    });
+
+    clearState(ctx.chat.id);
+    await ctx.answerCbQuery("Отправлено");
+
+    return ctx.reply(
+      `✅ Сообщение отправлено клиенту @${result?.sentToUsername || d.username}`,
+      mainMenu(ctx)
+    );
+  } catch (e) {
+    console.error("courier_msg_confirm error:", e);
     return ctx.reply(`❌ Ошибка: ${e.message}`);
   }
 });
@@ -3402,7 +3644,10 @@ bot.on("text", async (ctx) => {
           parse_mode: "Markdown",
           reply_markup: (isSuperAdmin(ctx)
             ? ppMenuKeyboard(id)
-            : pickupPointManagerMenu(id, { isSuper: false })
+            : pickupPointManagerMenu(id, {
+                isSuper: false,
+                pointKey: fresh?.key,
+              })
           ).reply_markup,
         });
       } catch (e) {
@@ -3634,6 +3879,39 @@ bot.on("text", async (ctx) => {
     }
     }
 
+
+      if (st?.mode === "courier_msg") {
+        const text = String(ctx.message?.text || "").trim();
+
+        if (st.step === 0) {
+          st.data.username = text.replace(/^@+/, "").trim();
+          st.step = 1;
+          setState(ctx.chat.id, st);
+          return askCourierMessageStep(ctx);
+        }
+
+        if (st.step === 1) {
+          st.data.text = text;
+          st.step = 2;
+          setState(ctx.chat.id, st);
+          return askCourierMessageStep(ctx);
+        }
+
+        if (st.step === 2) {
+          st.data.photoUrl = text === "-" ? "" : text;
+          st.step = 3;
+          setState(ctx.chat.id, st);
+          return askCourierMessageStep(ctx);
+        }
+
+        if (st.step === 3) {
+          st.data.buttonText = text === "-" ? "Связаться с курьером" : text;
+          st.step = 4;
+          setState(ctx.chat.id, st);
+          return askCourierMessageStep(ctx);
+        }
+      }
+    
     // ===== wizard inputs (старое поведение) =====
     if (st.mode !== "cat_builder" && st.mode !== "cat_edit") return;
 
