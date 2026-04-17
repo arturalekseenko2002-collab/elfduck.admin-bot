@@ -3988,7 +3988,7 @@ bot.on("text", async (ctx) => {
 
   setState(ctx.chat.id, st);
   return nextStep(ctx);
-}
+  }
 
   // sortOrder
   if (step === "sortOrder") {
@@ -4000,30 +4000,30 @@ bot.on("text", async (ctx) => {
   }
 });
 
-  bot.on("photo", async (ctx, next) => {
-    try {
-      const st = getState(ctx.chat.id);
-      if (!st || st.mode !== "courier_msg" || st.step !== 2) {
-        return next();
-      }
-
-      const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
-      const bestPhoto = photos[photos.length - 1];
-      const fileId = String(bestPhoto?.file_id || "").trim();
-
-      if (!fileId) {
-        return ctx.reply("❌ Не удалось прочитать фото. Попробуйте отправить ещё раз.");
-      }
-
-      st.data.photoFileId = fileId;
-      st.step = 3;
-      setState(ctx.chat.id, st);
-      return askCourierMessageStep(ctx);
-    } catch (e) {
-      console.error("courier_msg photo handler error:", e);
-      return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+bot.on("photo", async (ctx, next) => {
+  try {
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "courier_msg" || st.step !== 2) {
+      return next();
     }
-  });
+
+    const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+    const bestPhoto = photos[photos.length - 1];
+    const fileId = String(bestPhoto?.file_id || "").trim();
+
+    if (!fileId) {
+      return ctx.reply("❌ Не удалось прочитать фото. Попробуйте отправить ещё раз.");
+    }
+
+    st.data.photoFileId = fileId;
+    st.step = 3;
+    setState(ctx.chat.id, st);
+    return askCourierMessageStep(ctx);
+  } catch (e) {
+    console.error("courier_msg photo handler error:", e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
 
 // =====================================================
 // ===================== BOT START ======================
