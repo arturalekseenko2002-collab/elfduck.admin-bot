@@ -154,6 +154,7 @@ const managerMainMenu = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback("📦 Наличие", "fl_builder_start")],
     [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
+    [Markup.button.callback("📨 Сообщение клиенту от курьера", "courier_msg_main")],
     [Markup.button.callback("🏪 Точка самовывоза", "pp_list")],
   ]);
 
@@ -163,6 +164,7 @@ const superAdminMainMenu = () =>
     [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
     [Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start")],
     [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
+    [Markup.button.callback("📨 Сообщение клиенту от курьера", "courier_msg_main")],
     [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
     [Markup.button.callback("📋 Список категорий", "cat_list")],
