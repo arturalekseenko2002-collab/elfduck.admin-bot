@@ -212,7 +212,7 @@ const isPickupPointManager = async (ctx, pickupPointId) => {
   if (!myTelegramId || !safePickupPointId) return false;
 
   try {
-    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
     const data = await r.json().catch(() => ({}));
 
     const pickupPoints = Array.isArray(data?.pickupPoints)
@@ -240,7 +240,7 @@ const isCourierManager = async (ctx) => {
   if (!myTelegramId) return false;
 
   try {
-    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
     const data = await r.json().catch(() => ({}));
 
     const pickupPoints = Array.isArray(data?.pickupPoints)
@@ -652,7 +652,7 @@ const renderFlavorBuilderPreview = (d = {}) => {
 // - супер-админ видит все
 // - обычный менеджер видит только точки где его telegramId в allowedAdminTelegramIds
 const fetchMyPickupPoints = async (ctx) => {
-  const r = await fetch(`${API_URL}/pickup-points?active=0`);
+  const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
   const data = await r.json().catch(() => ({}));
   const points = data.pickupPoints || [];
   const myId = String(ctx.from?.id || "");
@@ -2238,7 +2238,7 @@ bot.action("courier_msg_main", async (ctx) => {
       return ctx.answerCbQuery("Нет доступа", { show_alert: true });
     }
 
-    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
     const data = await r.json().catch(() => ({}));
     const pickupPoints = Array.isArray(data?.pickupPoints)
       ? data.pickupPoints
@@ -2292,7 +2292,7 @@ bot.action(/^courier_msg_start:(.+)$/, async (ctx) => {
       return ctx.answerCbQuery("Нет доступа", { show_alert: true });
     }
 
-    const r = await fetch(`${API_URL}/pickup-points?active=0`);
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
     const data = await r.json().catch(() => ({}));
     const pickupPoints = Array.isArray(data?.pickupPoints)
       ? data.pickupPoints
