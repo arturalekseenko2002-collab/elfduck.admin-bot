@@ -2356,6 +2356,7 @@ bot.action("courier_msg_confirm", async (ctx) => {
       method: "POST",
       body: JSON.stringify({
         pickupPointId: d.pickupPointId,
+        target: d.username,
         username: d.username,
         text: d.text,
         photoUrl: d.photoUrl || "",
@@ -2367,9 +2368,18 @@ bot.action("courier_msg_confirm", async (ctx) => {
     clearState(ctx.chat.id);
     await ctx.answerCbQuery("Отправлено");
 
+    const sentToLabel = result?.sentToUsername
+
+      ? `@${result.sentToUsername}`
+
+      : String(result?.sentToTelegramId || d.username || "клиент");
+
     return ctx.reply(
-      `✅ Сообщение отправлено клиенту @${result?.sentToUsername || d.username}`,
+
+      `✅ Сообщение отправлено клиенту ${sentToLabel}`,
+
       mainMenu(ctx)
+
     );
   } catch (e) {
     console.error("courier_msg_confirm error:", e);
