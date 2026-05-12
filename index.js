@@ -176,7 +176,7 @@ const pickupPointManagerMenu = (ppId, options = {}) => {
   const isSuper = options?.isSuper === true;
 
   const pointKey = String(options?.pointKey || "").trim().replace(/,+$/, "");
-  const canSendCourierMessage = pointKey === "delivery";
+  const canSendCourierMessage = true;
 
   const rows = [
     [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
