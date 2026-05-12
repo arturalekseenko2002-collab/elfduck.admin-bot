@@ -2233,10 +2233,9 @@ bot.action(/pp_pay_toggle:(.+):(.+)/, async (ctx) => {
 
 bot.action("courier_msg_main", async (ctx) => {
   try {
-    const isCourier = await isCourierManager(ctx);
-    if (!isCourier && !isSuperAdmin(ctx)) {
-      return ctx.answerCbQuery("Нет доступа", { show_alert: true });
-    }
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
 
     const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
     const data = await r.json().catch(() => ({}));
