@@ -3520,6 +3520,16 @@ bot.action("broadcast_test", async (ctx) => {
   try {
     const data = await runBroadcastFromState(ctx, { limit: 5 });
 
+    const errorSamples = Array.isArray(data?.results)
+      ? data.results
+          .filter((row) => row && row.ok === false)
+          .slice(0, 5)
+          .map((row, index) => {
+            const error = String(row?.error || "UNKNOWN_ERROR").slice(0, 300);
+            return `${index + 1}. ${error}`;
+          })
+      : [];
+
     return ctx.reply(
       [
         "🧪 *Тестовая рассылка отправлена*",
@@ -3528,6 +3538,9 @@ bot.action("broadcast_test", async (ctx) => {
         `Отправлено: *${Number(data?.sent || 0)}*`,
         `Ошибок: *${Number(data?.failed || 0)}*`,
         `Заблокировали бота / недоступны: *${Number(data?.blocked || 0)}*`,
+        ...(errorSamples.length
+          ? ["", "*Ошибки Telegram:*", ...errorSamples.map((x) => `\`${x}\``)]
+          : []),
       ].join("\n"),
       { parse_mode: "Markdown" }
     );
