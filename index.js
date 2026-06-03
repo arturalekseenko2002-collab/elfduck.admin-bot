@@ -164,6 +164,7 @@ const superAdminMainMenu = () =>
     [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
     [Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start")],
     [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
+    [Markup.button.callback("📣 Рассылка всем", "broadcast_start")],
     [Markup.button.callback("📨 Сообщение клиенту от курьера", "courier_msg_main")],
     [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
     [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
@@ -281,6 +282,107 @@ const defaultCourierMessageData = () => ({
   text: "",
   photoUrl: "",
 });
+
+const BROADCAST_STEPS = ["photo", "text", "buttonText", "buttonUrl", "confirm"];
+
+const defaultBroadcastData = () => ({
+  photoUrl: "",
+  text: "",
+  buttonText: "Открыть ELF DUCK",
+  buttonUrl: "https://t.me/elfduck_shop_bot/app",
+});
+
+const renderBroadcastPreview = (d = {}) => {
+  const lines = [];
+
+  lines.push("📣 *Рассылка всем пользователям*");
+  lines.push("");
+  lines.push(`• фото: ${d.photoUrl ? "*прикреплено*" : "—"}`);
+  lines.push(`• текст: ${d.text ? `*${String(d.text).slice(0, 700)}*` : "—"}`);
+  lines.push(`• кнопка: *${d.buttonText || "—"}*`);
+  lines.push(`• ссылка: ${d.buttonUrl || "—"}`);
+
+  return lines.join("\n");
+};
+
+const broadcastNavKeyboard = (stepIndex) => {
+  if (stepIndex > 0) {
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback("⬅️ Назад", "broadcast_back"),
+        Markup.button.callback("✖️ Отмена", "broadcast_cancel"),
+      ],
+    ]);
+  }
+
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("✖️ Отмена", "broadcast_cancel")],
+  ]);
+};
+
+const askBroadcastStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "broadcast") return;
+
+  const step = BROADCAST_STEPS[st.step];
+  const d = st.data || {};
+  const preview = renderBroadcastPreview(d);
+
+  if (step === "photo") {
+    return ctx.reply(
+      `${preview}\n\nПрикрепите *фото* для пуш-уведомления одним сообщением.`,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "text") {
+    return ctx.reply(
+      `${preview}\n\nВведите *текст уведомления*.\n\nМожно использовать HTML: <b>жирный</b>, <i>курсив</i>.`,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "buttonText") {
+    return ctx.reply(
+      `${preview}\n\nВведите *текст кнопки*.\n\nПример: \`Открыть ELF DUCK\``,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "buttonUrl") {
+    return ctx.reply(
+      `${preview}\n\nВведите *ссылку кнопки*.\n\nПример: \`https://t.me/elfduck_shop_bot/app\``,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  return ctx.reply(
+    `${preview}\n\nПроверь сообщение. Сначала лучше отправить тест на 5 пользователей.`,
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("🧪 Тест на 5 пользователей", "broadcast_test")],
+        [Markup.button.callback("✅ Отправить всем", "broadcast_confirm")],
+        [
+          Markup.button.callback("⬅️ Назад", "broadcast_back"),
+          Markup.button.callback("✖️ Отмена", "broadcast_cancel"),
+        ],
+      ]),
+    }
+  );
+};
 
 const renderCourierMessagePreview = (d = {}) => {
   const lines = [];
@@ -3337,6 +3439,118 @@ bot.action(/prod_set_category:(.+)/, async (ctx) => {
   return nextProductStep(ctx);
 });
 
+bot.action("broadcast_start", async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Недостаточно прав");
+  }
+
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "broadcast",
+    step: 0,
+    data: defaultBroadcastData(),
+  });
+
+  return askBroadcastStep(ctx);
+});
+
+bot.action("broadcast_cancel", async (ctx) => {
+  await ctx.answerCbQuery();
+  clearState(ctx.chat.id);
+  return ctx.reply("Рассылка отменена.", mainMenu(ctx));
+});
+
+bot.action("broadcast_back", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "broadcast") return;
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+
+  return askBroadcastStep(ctx);
+});
+
+const runBroadcastFromState = async (ctx, options = {}) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "broadcast") return null;
+
+  const d = st.data || {};
+  const limit = Math.max(0, Number(options?.limit || 0));
+
+  const data = await api("/admin/users/broadcast-photo", {
+    method: "POST",
+    body: JSON.stringify({
+      dryRun: false,
+      limit,
+      photoUrl: d.photoUrl,
+      text: d.text,
+      buttonText: d.buttonText,
+      buttonUrl: d.buttonUrl,
+    }),
+  });
+
+  return data;
+};
+
+bot.action("broadcast_test", async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Недостаточно прав");
+  }
+
+  await ctx.answerCbQuery("Отправляю тест...");
+
+  try {
+    const data = await runBroadcastFromState(ctx, { limit: 5 });
+
+    return ctx.reply(
+      [
+        "🧪 *Тестовая рассылка отправлена*",
+        "",
+        `Найдено пользователей: *${Number(data?.totalUsers || 0)}*`,
+        `Отправлено: *${Number(data?.sent || 0)}*`,
+        `Ошибок: *${Number(data?.failed || 0)}*`,
+        `Заблокировали бота / недоступны: *${Number(data?.blocked || 0)}*`,
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка тестовой рассылки: ${String(e?.message || e)}`);
+  }
+});
+
+bot.action("broadcast_confirm", async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Недостаточно прав");
+  }
+
+  await ctx.answerCbQuery("Запускаю рассылку...");
+
+  try {
+    const data = await runBroadcastFromState(ctx);
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      [
+        "✅ *Рассылка завершена*",
+        "",
+        `Найдено пользователей: *${Number(data?.totalUsers || 0)}*`,
+        `Отправлено: *${Number(data?.sent || 0)}*`,
+        `Ошибок: *${Number(data?.failed || 0)}*`,
+        `Заблокировали бота / недоступны: *${Number(data?.blocked || 0)}*`,
+      ].join("\n"),
+      {
+        parse_mode: "Markdown",
+        ...mainMenu(ctx),
+      }
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка рассылки: ${String(e?.message || e)}`);
+  }
+});
+
 // ----- text inputs for steps -----
 bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
@@ -3348,6 +3562,87 @@ bot.on("text", async (ctx) => {
     try {
       await ctx.deleteMessage(ctx.message.message_id);
     } catch {}
+  }
+
+  const broadcastState = getState(ctx.chat.id);
+
+  if (broadcastState?.mode === "broadcast") {
+    if (!isSuperAdmin(ctx)) {
+      clearState(ctx.chat.id);
+      return ctx.reply("Недостаточно прав.");
+    }
+
+    const step = BROADCAST_STEPS[broadcastState.step];
+    const d = broadcastState.data || defaultBroadcastData();
+
+    if (step === "photo") {
+      const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+      const bestPhoto = photos.length ? photos[photos.length - 1] : null;
+
+      if (!bestPhoto?.file_id) {
+        return ctx.reply("Прикрепите фото одним сообщением.");
+      }
+
+      const fileLink = await ctx.telegram.getFileLink(bestPhoto.file_id);
+
+      d.photoUrl = String(fileLink || "");
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("text");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    if (step === "text") {
+      const text = String(ctx.message?.text || ctx.message?.caption || "").trim();
+
+      if (!text) {
+        return ctx.reply("Введите текст уведомления.");
+      }
+
+      d.text = text.slice(0, 1024);
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("buttonText");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    if (step === "buttonText") {
+      const text = String(ctx.message?.text || "").trim();
+
+      if (!text) {
+        return ctx.reply("Введите текст кнопки.");
+      }
+
+      d.buttonText = text.slice(0, 64);
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("buttonUrl");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    if (step === "buttonUrl") {
+      const text = String(ctx.message?.text || "").trim();
+
+      if (!isValidUrl(text)) {
+        return ctx.reply("Введите корректную ссылку, которая начинается с http:// или https://");
+      }
+
+      d.buttonUrl = text;
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("confirm");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    return askBroadcastStep(ctx);
   }
 
   const st = getState(ctx.chat.id);
@@ -4012,6 +4307,42 @@ bot.on("text", async (ctx) => {
 bot.on("photo", async (ctx, next) => {
   try {
     const st = getState(ctx.chat.id);
+
+    if (st?.mode === "broadcast") {
+      if (!isSuperAdmin(ctx)) {
+        clearState(ctx.chat.id);
+        return ctx.reply("Недостаточно прав.");
+      }
+
+      const step = BROADCAST_STEPS[st.step];
+
+      if (step !== "photo") {
+        return ctx.reply("Сейчас нужно отправить текст, а не фото.");
+      }
+
+      const d = st.data || defaultBroadcastData();
+      const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+      const bestPhoto = photos.length ? photos[photos.length - 1] : null;
+
+      if (!bestPhoto?.file_id) {
+        return ctx.reply("Прикрепите фото одним сообщением.");
+      }
+
+      const file = await ctx.telegram.getFile(bestPhoto.file_id);
+      const filePath = String(file?.file_path || "").trim();
+
+      if (!filePath) {
+        return ctx.reply("❌ Не удалось получить путь к фото. Попробуйте ещё раз.");
+      }
+
+      d.photoUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+      st.data = d;
+      st.step = BROADCAST_STEPS.indexOf("text");
+
+      setState(ctx.chat.id, st);
+      return askBroadcastStep(ctx);
+    }
+
     if (!st || st.mode !== "courier_msg" || Number(st.step) !== 2) {
       return next();
     }
