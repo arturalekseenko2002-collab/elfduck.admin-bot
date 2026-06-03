@@ -289,7 +289,7 @@ const defaultBroadcastData = () => ({
   photoUrl: "",
   text: "",
   buttonText: "Открыть ELF DUCK",
-  buttonUrl: "https://t.me/elfduck_shop_bot/app",
+  buttonUrl: "https://elf-duck.vercel.app/referral",
 });
 
 const renderBroadcastPreview = (d = {}) => {
@@ -298,7 +298,7 @@ const renderBroadcastPreview = (d = {}) => {
   lines.push("📣 *Рассылка всем пользователям*");
   lines.push("");
   lines.push(`• фото: ${d.photoUrl ? "*прикреплено*" : "—"}`);
-  lines.push(`• текст: ${d.text ? `*${String(d.text).slice(0, 700)}*` : "—"}`);
+  lines.push(`• текст: ${d.text ? "*заполнен*" : "—"}`);
   lines.push(`• кнопка: *${d.buttonText || "—"}*`);
   lines.push(`• ссылка: ${d.buttonUrl || "—"}`);
 
@@ -360,10 +360,32 @@ const askBroadcastStep = async (ctx) => {
 
   if (step === "buttonUrl") {
     return ctx.reply(
-      `${preview}\n\nВведите *ссылку кнопки*.\n\nПример: \`https://t.me/elfduck_shop_bot/app\``,
+      `${preview}\n\nВведите *ссылку кнопки для Mini App*.\n\nПример: \`https://elf-duck.vercel.app/referral\``,
       {
         parse_mode: "Markdown",
         ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  const confirmKeyboard = Markup.inlineKeyboard([
+    [Markup.button.callback("🧪 Тест на 5 пользователей", "broadcast_test")],
+    [Markup.button.callback("✅ Отправить всем", "broadcast_confirm")],
+    [
+      Markup.button.callback("⬅️ Назад", "broadcast_back"),
+      Markup.button.callback("✖️ Отмена", "broadcast_cancel"),
+    ],
+  ]);
+
+  if (d.photoUrl && isValidUrl(d.photoUrl)) {
+    await ctx.reply("👇 Ниже показано, как уведомление будет выглядеть у клиента:");
+
+    return ctx.replyWithPhoto(
+      { url: d.photoUrl },
+      {
+        caption: d.text || " ",
+        parse_mode: "HTML",
+        reply_markup: confirmKeyboard.reply_markup,
       }
     );
   }
@@ -372,14 +394,7 @@ const askBroadcastStep = async (ctx) => {
     `${preview}\n\nПроверь сообщение. Сначала лучше отправить тест на 5 пользователей.`,
     {
       parse_mode: "Markdown",
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback("🧪 Тест на 5 пользователей", "broadcast_test")],
-        [Markup.button.callback("✅ Отправить всем", "broadcast_confirm")],
-        [
-          Markup.button.callback("⬅️ Назад", "broadcast_back"),
-          Markup.button.callback("✖️ Отмена", "broadcast_cancel"),
-        ],
-      ]),
+      ...confirmKeyboard,
     }
   );
 };
