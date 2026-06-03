@@ -126,6 +126,88 @@ const api = async (path, options = {}) => {
 
 const isValidUrl = (s) => /^https?:\/\/\S+$/i.test(s);
 
+const broadcastPollTimers = new Map();
+
+const formatBroadcastJobStatus = (job = {}) => {
+  const totalUsers = Number(job?.totalUsers || 0);
+  const processed = Number(job?.processed || 0);
+  const sent = Number(job?.sent || 0);
+  const failed = Number(job?.failed || 0);
+  const blocked = Number(job?.blocked || 0);
+  const status = String(job?.status || "running");
+  const percent = totalUsers > 0 ? Math.floor((processed / totalUsers) * 100) : 0;
+
+  const title = status === "done"
+    ? "✅ *Рассылка завершена*"
+    : "📣 *Рассылка выполняется*";
+
+  const errors = Array.isArray(job?.lastErrors)
+    ? job.lastErrors.slice(-3).map((row, index) => {
+        const error = String(row?.error || "UNKNOWN_ERROR").slice(0, 160);
+        return `\`${index + 1}. ${error}\``;
+      })
+    : [];
+
+  return [
+    title,
+    "",
+    `ID задачи: \`${String(job?.jobId || "—")}\``,
+    `Прогресс: *${processed}/${totalUsers}* — *${percent}%*`,
+    `Отправлено: *${sent}*`,
+    `Ошибок: *${failed}*`,
+    `Заблокировали / недоступны: *${blocked}*`,
+    ...(errors.length ? ["", "*Последние ошибки:*", ...errors] : []),
+  ].join("\n");
+};
+
+const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
+  const chatId = String(ctx?.chat?.id || "");
+  const safeJobId = String(jobId || "").trim();
+  const safeMessageId = Number(statusMessageId || 0);
+
+  if (!chatId || !safeJobId || !safeMessageId) return;
+
+  const timerKey = `${chatId}:${safeJobId}`;
+
+  const prevTimer = broadcastPollTimers.get(timerKey);
+  if (prevTimer) clearInterval(prevTimer);
+
+  let lastText = "";
+  let attempts = 0;
+
+  const timer = setInterval(async () => {
+    attempts += 1;
+
+    try {
+      const data = await api(`/admin/users/broadcast-jobs/${safeJobId}`);
+      const job = data?.job || {};
+      const text = formatBroadcastJobStatus(job);
+
+      if (text !== lastText) {
+        lastText = text;
+
+        try {
+          await ctx.telegram.editMessageText(chatId, safeMessageId, undefined, text, {
+            parse_mode: "Markdown",
+          });
+        } catch {}
+      }
+
+      if (String(job?.status || "") === "done") {
+        clearInterval(timer);
+        broadcastPollTimers.delete(timerKey);
+      }
+    } catch (e) {
+      if (attempts > 120) {
+        clearInterval(timer);
+        broadcastPollTimers.delete(timerKey);
+      }
+    }
+  }, 5000);
+
+  broadcastPollTimers.set(timerKey, timer);
+};
+
 function translitRuToLat(input) {
   const s = String(input || "").trim().toLowerCase();
   const map = {
@@ -3563,41 +3645,22 @@ bot.action("broadcast_confirm", async (ctx) => {
     const data = await runBroadcastFromState(ctx, { async: true });
     clearState(ctx.chat.id);
 
-    return ctx.reply(
+    const statusMessage = await ctx.reply(formatBroadcastJobStatus({
+      jobId: data?.jobId,
+      status: "running",
+      totalUsers: Number(data?.totalUsers || 0),
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      blocked: 0,
+      lastErrors: [],
+    }), {
+      parse_mode: "Markdown",
+      ...mainMenu(ctx),
+    });
 
-      [
-
-        "✅ *Рассылка запущена*",
-
-        "",
-
-        `ID задачи: \`${String(data?.jobId || "") || "—"}\``,
-
-        `Найдено пользователей: *${Number(data?.totalUsers || 0)}*`,
-
-        "",
-
-        "Рассылка отправляется в фоне, чтобы админ-бот не падал по таймауту Telegram.",
-
-        "",
-
-        "Прогресс смотри в логах backend Railway:",
-
-        "`[BROADCAST PHOTO ASYNC][PROGRESS]`",
-
-        "`[BROADCAST PHOTO ASYNC][DONE]`",
-
-      ].join("\n"),
-
-      {
-
-        parse_mode: "Markdown",
-
-        ...mainMenu(ctx),
-
-      }
-
-    );
+    startBroadcastStatusPolling(ctx, data?.jobId, statusMessage?.message_id);
+    return statusMessage;
   } catch (e) {
     return ctx.reply(`❌ Ошибка рассылки: ${String(e?.message || e)}`);
   }
