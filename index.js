@@ -3495,17 +3495,20 @@ const runBroadcastFromState = async (ctx, options = {}) => {
   const d = st.data || {};
   const limit = Math.max(0, Number(options?.limit || 0));
 
-  const data = await api("/admin/users/broadcast-photo", {
-    method: "POST",
-    body: JSON.stringify({
-      dryRun: false,
-      limit,
-      photoUrl: d.photoUrl,
-      text: d.text,
-      buttonText: d.buttonText,
-      buttonUrl: d.buttonUrl,
-    }),
-  });
+  const data = await api(
+    options?.async ? "/admin/users/broadcast-photo-async" : "/admin/users/broadcast-photo",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        dryRun: false,
+        limit,
+        photoUrl: d.photoUrl,
+        text: d.text,
+        buttonText: d.buttonText,
+        buttonUrl: d.buttonUrl,
+      }),
+    }
+  );
 
   return data;
 };
@@ -3557,22 +3560,43 @@ bot.action("broadcast_confirm", async (ctx) => {
   await ctx.answerCbQuery("Запускаю рассылку...");
 
   try {
-    const data = await runBroadcastFromState(ctx);
+    const data = await runBroadcastFromState(ctx, { async: true });
     clearState(ctx.chat.id);
 
     return ctx.reply(
+
       [
-        "✅ *Рассылка завершена*",
+
+        "✅ *Рассылка запущена*",
+
         "",
+
+        `ID задачи: \`${String(data?.jobId || "") || "—"}\``,
+
         `Найдено пользователей: *${Number(data?.totalUsers || 0)}*`,
-        `Отправлено: *${Number(data?.sent || 0)}*`,
-        `Ошибок: *${Number(data?.failed || 0)}*`,
-        `Заблокировали бота / недоступны: *${Number(data?.blocked || 0)}*`,
+
+        "",
+
+        "Рассылка отправляется в фоне, чтобы админ-бот не падал по таймауту Telegram.",
+
+        "",
+
+        "Прогресс смотри в логах backend Railway:",
+
+        "`[BROADCAST PHOTO ASYNC][PROGRESS]`",
+
+        "`[BROADCAST PHOTO ASYNC][DONE]`",
+
       ].join("\n"),
+
       {
+
         parse_mode: "Markdown",
+
         ...mainMenu(ctx),
+
       }
+
     );
   } catch (e) {
     return ctx.reply(`❌ Ошибка рассылки: ${String(e?.message || e)}`);
