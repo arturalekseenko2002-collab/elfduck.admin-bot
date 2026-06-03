@@ -3604,16 +3604,15 @@ bot.on("text", async (ctx) => {
     const d = broadcastState.data || defaultBroadcastData();
 
     if (step === "photo") {
-      const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
-      const bestPhoto = photos.length ? photos[photos.length - 1] : null;
+      const photoUrl = String(ctx.message?.text || "").trim();
 
-      if (!bestPhoto?.file_id) {
-        return ctx.reply("Прикрепите фото одним сообщением.");
+      if (!isValidUrl(photoUrl)) {
+        return ctx.reply(
+          "❌ Отправьте прямую публичную ссылку на картинку, которая начинается с http:// или https://.\n\nНапример: https://.../banner.jpg"
+        );
       }
 
-      const fileLink = await ctx.telegram.getFileLink(bestPhoto.file_id);
-
-      d.photoUrl = String(fileLink || "");
+      d.photoUrl = photoUrl;
       broadcastState.data = d;
       broadcastState.step = BROADCAST_STEPS.indexOf("text");
 
