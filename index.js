@@ -236,6 +236,7 @@ const managerMainMenu = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback("📦 Наличие", "fl_builder_start")],
     [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
+    [Markup.button.callback("🎟 Промокоды", "promo_codes_menu")],
     [Markup.button.callback("📨 Сообщение клиенту от курьера", "courier_msg_main")],
     [Markup.button.callback("🏪 Точка самовывоза", "pp_list")],
   ]);
@@ -246,6 +247,7 @@ const superAdminMainMenu = () =>
     [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
     [Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start")],
     [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
+    [Markup.button.callback("🎟 Промокоды", "promo_codes_menu")],
     [Markup.button.callback("📣 Рассылка всем", "broadcast_start")],
     [Markup.button.callback("📨 Сообщение клиенту от курьера", "courier_msg_main")],
     [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
@@ -358,6 +360,122 @@ const defaultCashbackGrantData = () => ({
   username: "",
   amountZl: 0,
 });
+
+const defaultPromoCodeData = () => ({
+
+  code: "",
+
+  amountZl: 0,
+
+});
+
+const PROMO_CODE_STEPS = [
+
+  "code",
+
+  "amount",
+
+  "confirm",
+
+];
+
+const normalizePromoCodeInput = (value) =>
+
+  String(value || "")
+
+    .trim()
+
+    .toUpperCase()
+
+    .replace(/\s+/g, "")
+
+    .replace(/[^A-Z0-9_-]/g, "")
+
+    .slice(0, 32);
+
+const renderPromoCodePreview = (data = {}) => {
+  const code = String(data?.code || "").trim();
+  const amountZl = Number(data?.amountZl || 0);
+
+  return [
+    "🎟 *Промокод — превью*",
+    "",
+    `• код: *${code || "—"}*`,
+    `• начисление: *${amountZl > 0 ? amountZl.toFixed(2) : "0.00"} PLN*`,
+  ].join("\n");
+};
+
+const promoCodeNavKeyboard = (stepIndex) => {
+  if (stepIndex > 0) {
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback("⬅️ Назад", "promo_code_back"),
+        Markup.button.callback("✖️ Отмена", "promo_code_cancel"),
+      ],
+    ]);
+  }
+
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("✖️ Отмена", "promo_code_cancel")],
+  ]);
+};
+
+const askPromoCodeStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+
+  if (!st || st.mode !== "promo_code_create") {
+    return;
+  }
+
+  const step = PROMO_CODE_STEPS[st.step];
+  const preview = renderPromoCodePreview(st.data || {});
+
+  if (step === "code") {
+    return ctx.reply(
+      `${preview}\n\nВведите *промокод* латиницей.\n\nПример: \`ELFDUCK25\``,
+      {
+        parse_mode: "Markdown",
+        ...promoCodeNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "amount") {
+    return ctx.reply(
+      `${preview}\n\nВведите *сумму начисления* в PLN.\n\nПример: \`25\` или \`37.5\``,
+      {
+        parse_mode: "Markdown",
+        ...promoCodeNavKeyboard(st.step),
+      }
+    );
+  }
+
+  return ctx.reply(
+    `${preview}\n\nСоздать и активировать этот промокод?`,
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "✅ Создать промокод",
+            "promo_code_confirm"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "⬅️ Назад",
+            "promo_code_back"
+          ),
+          Markup.button.callback(
+            "✖️ Отмена",
+            "promo_code_cancel"
+          ),
+        ],
+      ]),
+    }
+  );
+};
+
 const defaultCourierMessageData = () => ({
   pickupPointId: "",
   username: "",
@@ -3666,6 +3784,83 @@ bot.action("broadcast_confirm", async (ctx) => {
   }
 });
 
+// =====================================================
+// ===================== PROMO CODES ====================
+// =====================================================
+
+bot.action("promo_codes_menu", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "promo_code_create",
+    step: 0,
+    data: defaultPromoCodeData(),
+  });
+
+  return askPromoCodeStep(ctx);
+});
+
+bot.action("promo_code_cancel", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+
+  return ctx.reply(
+    "❌ Создание промокода отменено.",
+    mainMenu(ctx)
+  );
+});
+
+bot.action("promo_code_back", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+
+  if (!st || st.mode !== "promo_code_create") {
+    return;
+  }
+
+  st.step = Math.max(0, st.step - 1);
+
+  setState(ctx.chat.id, st);
+
+  return askPromoCodeStep(ctx);
+});
+
+bot.action("promo_code_confirm", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+
+  if (!st || st.mode !== "promo_code_create") {
+    return;
+  }
+
+  try {
+    const res = await api("/admin/promo-codes", {
+      method: "POST",
+      body: JSON.stringify({
+        code: st.data.code,
+        amountZl: st.data.amountZl,
+      }),
+    });
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      `✅ Промокод *${res.promoCode.code}* создан.\n\n💰 Начисление: *${Number(res.promoCode.amountZl).toFixed(2)} PLN*`,
+      {
+        parse_mode: "Markdown",
+        ...mainMenu(ctx),
+      }
+    );
+  } catch (e) {
+    return ctx.reply(
+      `❌ Ошибка:\n\n${e.message}`
+    );
+  }
+});
+
 // ----- text inputs for steps -----
 bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
@@ -3761,6 +3956,58 @@ bot.on("text", async (ctx) => {
 
   const st = getState(ctx.chat.id);
   if (!st) return;
+
+    if (st.mode === "promo_code_create") {
+    const step = PROMO_CODE_STEPS[st.step];
+    const data = st.data || defaultPromoCodeData();
+
+    if (step === "code") {
+      const code = normalizePromoCodeInput(text);
+
+      if (!code || code.length < 3) {
+        return ctx.reply(
+          "❌ Введите корректный промокод длиной минимум 3 символа. Разрешены латинские буквы, цифры, _ и -."
+        );
+      }
+
+      data.code = code;
+      st.data = data;
+      st.step = PROMO_CODE_STEPS.indexOf("amount");
+
+      setState(ctx.chat.id, st);
+
+      return askPromoCodeStep(ctx);
+    }
+
+    if (step === "amount") {
+      const amountZl = Number(
+        text.replace(",", ".")
+      );
+
+      if (
+        !Number.isFinite(amountZl) ||
+        amountZl <= 0
+      ) {
+        return ctx.reply(
+          "❌ Введите корректную сумму больше 0. Например: 25 или 37.5"
+        );
+      }
+
+      data.amountZl = Number(
+        amountZl.toFixed(2)
+      );
+
+      st.data = data;
+      st.step =
+        PROMO_CODE_STEPS.indexOf("confirm");
+
+      setState(ctx.chat.id, st);
+
+      return askPromoCodeStep(ctx);
+    }
+
+    return askPromoCodeStep(ctx);
+  }
 
     if (st?.mode === "cashback_grant") {
       const step = CASHBACK_GRANT_STEPS[st.step];
