@@ -609,57 +609,24 @@ const defaultBroadcastData = () => ({
 
 });
 
-const BROADCAST_TEMPLATES = [
-  {
-    id: "new_products",
-    title: "🆕 Новинки",
+let BROADCAST_TEMPLATES = [];
 
-    text: [
-      "🆕 <b>В ELF DUCK появились новинки</b>",
-      "",
-      "Откройте каталог и посмотрите новые товары.",
-    ].join("\n"),
+const loadBroadcastTemplates = async () => {
+  try {
+    const data = await api("/admin/broadcast/templates");
 
-    buttonText: "Открыть каталог",
-    buttonUrl: "https://elf-duck.vercel.app/",
-    photoUrl: "",
-  },
+    BROADCAST_TEMPLATES = Array.isArray(data.templates)
+      ? data.templates
+      : [];
+  } catch (e) {
+    console.error("loadBroadcastTemplates:", e);
+    BROADCAST_TEMPLATES = [];
+  }
+};
 
-  {
-    id: "promo",
-    title: "🔥 Акция",
-
-    text: [
-      "🔥 <b>Специальное предложение ELF DUCK</b>",
-      "",
-      "Успейте воспользоваться предложением, пока оно активно.",
-    ].join("\n"),
-
-    buttonText: "Посмотреть предложение",
-    buttonUrl: "https://elf-duck.vercel.app/",
-    photoUrl: "",
-  },
-
-  {
-    id: "cashback",
-    title: "💰 Кэшбек",
-
-    text: [
-      "💰 <b>Не забывайте про кэшбек ELF DUCK</b>",
-      "",
-      "Покупайте товары и получайте кэшбек на баланс.",
-    ].join("\n"),
-
-    buttonText: "Открыть ELF DUCK",
-    buttonUrl: "https://elf-duck.vercel.app/",
-    photoUrl: "",
-  },
-];
-
-const getBroadcastTemplateById = (templateId) =>
+const getBroadcastTemplateById = (id) =>
   BROADCAST_TEMPLATES.find(
-    (template) =>
-      template.id === String(templateId || "").trim()
+    (x) => String(x._id) === String(id)
   );
 
 const renderBroadcastPreview = (d = {}) => {
@@ -5711,4 +5678,7 @@ bot.on("photo", async (ctx, next) => {
 // =====================================================
 // ===================== BOT START ======================
 // =====================================================
+
+await loadBroadcastTemplates();
+
 bot.launch().then(() => console.log("✅ Admin bot launched")); 
