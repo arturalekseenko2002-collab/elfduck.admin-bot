@@ -186,11 +186,21 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
 
     try {
       const data = await api(
-        `/admin/users/broadcast-jobs/${safeJobId}`
+        `/admin/users/broadcast-jobs/${safeJobId}?_ts=${Date.now()}`
       );
 
       const job = data?.job || {};
       const text = formatBroadcastJobStatus(job);
+
+      console.log("[BROADCAST STATUS POLL]", {
+        jobId: safeJobId,
+        status: job?.status,
+        processed: job?.processed,
+        totalUsers: job?.totalUsers,
+        sent: job?.sent,
+        failed: job?.failed,
+        blocked: job?.blocked,
+      });
 
       if (text !== lastText) {
         try {
@@ -228,7 +238,11 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
         }
       }
 
-      if (String(job?.status || "") === "done") {
+      if (
+        ["done", "failed"].includes(
+          String(job?.status || "")
+        )
+      ) {
         if (timer) clearInterval(timer);
         broadcastPollTimers.delete(timerKey);
       }
