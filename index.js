@@ -634,7 +634,7 @@ const renderBroadcastTemplatePreview = (d = {}) => [
   `Фото: ${d.photoUrl ? "✅" : "—"}`,
   `Текст: ${d.text ? "✅" : "—"}`,
   `Кнопка: *${d.buttonText || "—"}*`,
-  `Ссылка: ${d.buttonUrl || "—"}*`,
+  `Ссылка: ${d.buttonUrl || "—"}`,
 ].join("\n");
 
 const broadcastTemplateNav = (step) => {
