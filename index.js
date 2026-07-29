@@ -3112,7 +3112,37 @@ bot.action("fl_back", async (ctx) => {
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "fl_builder") return;
 
+  const currentStep = FL_BUILDER_STEPS[st.step];
+
+  // Меню модели -> список товаров выбранной категории
+  if (currentStep === "mode") {
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    st.step = FL_BUILDER_STEPS.indexOf("product");
+
+    setState(ctx.chat.id, st);
+    return askFlavorStep(ctx);
+  }
+
+  // Список товаров -> список категорий
+  if (currentStep === "product") {
+    st.data.categoryKey = "";
+    st.data.categoryTitle = "";
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    st.step = FL_BUILDER_STEPS.indexOf("product");
+
+    setState(ctx.chat.id, st);
+    return askFlavorStep(ctx);
+  }
+
+  // На остальных шагах возвращаемся на один шаг назад
   st.step = Math.max(0, Number(st.step || 0) - 1);
+
   setState(ctx.chat.id, st);
   return askFlavorStep(ctx);
 });
