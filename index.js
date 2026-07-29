@@ -530,24 +530,148 @@ const defaultCourierMessageData = () => ({
   photoUrl: "",
 });
 
-const BROADCAST_STEPS = ["photo", "text", "buttonText", "buttonUrl", "confirm"];
+const BROADCAST_STEPS = [
+  "audienceType",
+  "segmentType",
+  "segmentValue",
+  "templateChoice",
+  "photo",
+  "text",
+  "buttonText",
+  "buttonUrl",
+  "confirm",
+];
 
 const defaultBroadcastData = () => ({
+
+  audienceType: "all",
+
+  segmentType: "",
+
+  segmentValue: "",
+
+  username: "",
+
+  templateId: "",
+
   photoUrl: "",
+
   text: "",
+
   buttonText: "Открыть ELF DUCK",
+
   buttonUrl: "https://elf-duck.vercel.app/referral",
+
 });
 
+const BROADCAST_TEMPLATES = [
+  {
+    id: "new_products",
+    title: "🆕 Новинки",
+
+    text: [
+      "🆕 <b>В ELF DUCK появились новинки</b>",
+      "",
+      "Откройте каталог и посмотрите новые товары.",
+    ].join("\n"),
+
+    buttonText: "Открыть каталог",
+    buttonUrl: "https://elf-duck.vercel.app/",
+    photoUrl: "",
+  },
+
+  {
+    id: "promo",
+    title: "🔥 Акция",
+
+    text: [
+      "🔥 <b>Специальное предложение ELF DUCK</b>",
+      "",
+      "Успейте воспользоваться предложением, пока оно активно.",
+    ].join("\n"),
+
+    buttonText: "Посмотреть предложение",
+    buttonUrl: "https://elf-duck.vercel.app/",
+    photoUrl: "",
+  },
+
+  {
+    id: "cashback",
+    title: "💰 Кэшбек",
+
+    text: [
+      "💰 <b>Не забывайте про кэшбек ELF DUCK</b>",
+      "",
+      "Покупайте товары и получайте кэшбек на баланс.",
+    ].join("\n"),
+
+    buttonText: "Открыть ELF DUCK",
+    buttonUrl: "https://elf-duck.vercel.app/",
+    photoUrl: "",
+  },
+];
+
+const getBroadcastTemplateById = (templateId) =>
+  BROADCAST_TEMPLATES.find(
+    (template) =>
+      template.id === String(templateId || "").trim()
+  );
+
 const renderBroadcastPreview = (d = {}) => {
+  let audienceLabel = "Массовая — всем клиентам";
+
+  if (d.audienceType === "username") {
+    audienceLabel = `Точечная — @${
+      String(d.username || "")
+        .trim()
+        .replace(/^@/, "") || "—"
+    }`;
+  }
+
+  if (d.audienceType === "segment") {
+    audienceLabel = `Сегмент — ${
+      d.segmentType || "—"
+    } / ${d.segmentValue || "—"}`;
+  }
+
+  const template = getBroadcastTemplateById(
+    d.templateId
+  );
+
   const lines = [];
 
-  lines.push("📣 *Рассылка всем пользователям*");
+  lines.push("📣 *Push-уведомление*");
   lines.push("");
-  lines.push(`• фото: ${d.photoUrl ? "*прикреплено*" : "—"}`);
-  lines.push(`• текст: ${d.text ? "*заполнен*" : "—"}`);
-  lines.push(`• кнопка: *${d.buttonText || "—"}*`);
-  lines.push(`• ссылка: ${d.buttonUrl || "—"}`);
+
+  lines.push(
+    `• аудитория: *${audienceLabel}*`
+  );
+
+  lines.push(
+    `• шаблон: *${
+      template?.title || "Свой текст"
+    }*`
+  );
+
+  lines.push(
+    `• фото: ${
+      d.photoUrl ? "*прикреплено*" : "—"
+    }`
+  );
+
+  lines.push(
+    `• текст: ${
+      d.text ? "*заполнен*" : "—"
+    }`
+  );
+
+  lines.push(
+    `• кнопка: *${d.buttonText || "—"}*`
+  );
+
+  lines.push(
+    `• ссылка: ${d.buttonUrl || "—"}`
+  );
 
   return lines.join("\n");
 };
@@ -574,6 +698,247 @@ const askBroadcastStep = async (ctx) => {
   const step = BROADCAST_STEPS[st.step];
   const d = st.data || {};
   const preview = renderBroadcastPreview(d);
+
+  if (step === "audienceType") {
+    return ctx.reply("📣 *Выберите аудиторию рассылки*", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "👥 Всем клиентам",
+            "broadcast_audience:all"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "🎯 По сегменту",
+            "broadcast_audience:segment"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "👤 По username",
+            "broadcast_audience:username"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "✖️ Отмена",
+            "broadcast_cancel"
+          ),
+        ],
+      ]),
+    });
+  }
+
+  if (step === "segmentType") {
+    if (d.audienceType === "username") {
+      return ctx.reply(
+        `${preview}\n\nВведите *username клиента* в формате: \`@username\``,
+        {
+          parse_mode: "Markdown",
+          ...broadcastNavKeyboard(st.step),
+        }
+      );
+    }
+
+    return ctx.reply("🎯 *Выберите тип сегмента*", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "📦 Категория товара",
+            "broadcast_segment_type:category"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "🏪 Точка самовывоза",
+            "broadcast_segment_type:pickupPoint"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "🚚 Способ получения",
+            "broadcast_segment_type:deliveryMethod"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "⬅️ Назад",
+            "broadcast_back"
+          ),
+          Markup.button.callback(
+            "✖️ Отмена",
+            "broadcast_cancel"
+          ),
+        ],
+      ]),
+    });
+  }
+
+  if (step === "segmentValue") {
+    if (d.segmentType === "category") {
+      return ctx.reply(
+        "📦 *Выберите категорию товара*",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "Жидкости",
+                "broadcast_segment_value:liquids"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Одноразки",
+                "broadcast_segment_value:disposables"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Поды",
+                "broadcast_segment_value:pods"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Картриджи",
+                "broadcast_segment_value:cartridges"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "⬅️ Назад",
+                "broadcast_back"
+              ),
+              Markup.button.callback(
+                "✖️ Отмена",
+                "broadcast_cancel"
+              ),
+            ],
+          ]),
+        }
+      );
+    }
+
+    if (d.segmentType === "deliveryMethod") {
+      return ctx.reply(
+        "🚚 *Выберите способ получения*",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "Самовывоз",
+                "broadcast_segment_value:pickup"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Доставка курьером",
+                "broadcast_segment_value:courier"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "InPost",
+                "broadcast_segment_value:inpost"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "⬅️ Назад",
+                "broadcast_back"
+              ),
+              Markup.button.callback(
+                "✖️ Отмена",
+                "broadcast_cancel"
+              ),
+            ],
+          ]),
+        }
+      );
+    }
+
+    const pointsData = await api(
+      `/pickup-points?active=0&_ts=${Date.now()}`
+    );
+
+    const points = Array.isArray(
+      pointsData?.pickupPoints
+    )
+      ? pointsData.pickupPoints
+      : Array.isArray(pointsData)
+      ? pointsData
+      : [];
+
+    return ctx.reply(
+      "🏪 *Выберите точку самовывоза*",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          ...points.map((point) => [
+            Markup.button.callback(
+              String(
+                point?.title ||
+                  point?.address ||
+                  point?.key ||
+                  "Точка"
+              ),
+              `broadcast_segment_value:${String(
+                point?._id || point?.key || ""
+              )}`
+            ),
+          ]),
+          [
+            Markup.button.callback(
+              "⬅️ Назад",
+              "broadcast_back"
+            ),
+            Markup.button.callback(
+              "✖️ Отмена",
+              "broadcast_cancel"
+            ),
+          ],
+        ]),
+      }
+    );
+  }
+
+  if (step === "templateChoice") {
+    return ctx.reply(
+      "🗂 *Выберите шаблон или создайте уведомление вручную*",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          ...BROADCAST_TEMPLATES.map((template) => [
+            Markup.button.callback(
+              template.title,
+              `broadcast_template:${template.id}`
+            ),
+          ]),
+          [
+            Markup.button.callback(
+              "✍️ Свой текст",
+              "broadcast_template:custom"
+            ),
+          ],
+          [
+            Markup.button.callback(
+              "⬅️ Назад",
+              "broadcast_back"
+            ),
+            Markup.button.callback(
+              "✖️ Отмена",
+              "broadcast_cancel"
+            ),
+          ],
+        ]),
+      }
+    );
+  }
 
   if (step === "photo") {
     return ctx.reply(
@@ -4002,6 +4367,154 @@ bot.action(/prod_set_category:(.+)/, async (ctx) => {
   return nextProductStep(ctx);
 });
 
+bot.action(
+  /^broadcast_audience:(all|segment|username)$/,
+  async (ctx) => {
+    if (!isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery("No access");
+    }
+
+    await ctx.answerCbQuery();
+
+    const st = getState(ctx.chat.id);
+
+    if (!st || st.mode !== "broadcast") return;
+
+    st.data.audienceType = ctx.match[1];
+
+    st.data.segmentType = "";
+    st.data.segmentValue = "";
+    st.data.username = "";
+
+    st.step =
+      st.data.audienceType === "all"
+        ? BROADCAST_STEPS.indexOf(
+            "templateChoice"
+          )
+        : BROADCAST_STEPS.indexOf(
+            "segmentType"
+          );
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+);
+
+bot.action(
+  /^broadcast_segment_type:(category|pickupPoint|deliveryMethod)$/,
+  async (ctx) => {
+    if (!isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery("No access");
+    }
+
+    await ctx.answerCbQuery();
+
+    const st = getState(ctx.chat.id);
+
+    if (!st || st.mode !== "broadcast") return;
+
+    st.data.segmentType = ctx.match[1];
+    st.data.segmentValue = "";
+
+    st.step =
+      BROADCAST_STEPS.indexOf(
+        "segmentValue"
+      );
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+);
+
+bot.action(
+  /^broadcast_segment_value:(.+)$/,
+  async (ctx) => {
+    if (!isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery("No access");
+    }
+
+    await ctx.answerCbQuery();
+
+    const st = getState(ctx.chat.id);
+
+    if (!st || st.mode !== "broadcast") return;
+
+    st.data.segmentValue = String(
+      ctx.match[1] || ""
+    ).trim();
+
+    st.step =
+      BROADCAST_STEPS.indexOf(
+        "templateChoice"
+      );
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+);
+
+bot.action(
+  /^broadcast_template:(.+)$/,
+  async (ctx) => {
+    if (!isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery("No access");
+    }
+
+    await ctx.answerCbQuery();
+
+    const st = getState(ctx.chat.id);
+
+    if (!st || st.mode !== "broadcast") return;
+
+    const templateId = String(
+      ctx.match[1] || ""
+    ).trim();
+
+    const template =
+      getBroadcastTemplateById(templateId);
+
+    st.data.templateId =
+      templateId === "custom"
+        ? ""
+        : templateId;
+
+    if (template) {
+      st.data.photoUrl =
+        template.photoUrl || "";
+
+      st.data.text =
+        template.text || "";
+
+      st.data.buttonText =
+        template.buttonText ||
+        "Открыть ELF DUCK";
+
+      st.data.buttonUrl =
+        template.buttonUrl ||
+        "https://elf-duck.vercel.app/";
+    } else {
+      st.data.photoUrl = "";
+      st.data.text = "";
+
+      st.data.buttonText =
+        "Открыть ELF DUCK";
+
+      st.data.buttonUrl =
+        "https://elf-duck.vercel.app/referral";
+    }
+
+    st.step =
+      BROADCAST_STEPS.indexOf("photo");
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+);
+
 bot.action("broadcast_start", async (ctx) => {
   if (!isSuperAdmin(ctx)) {
     return ctx.answerCbQuery("Недостаточно прав");
@@ -4044,12 +4557,21 @@ const runBroadcastFromState = async (ctx, options = {}) => {
   const limit = Math.max(0, Number(options?.limit || 0));
 
   const data = await api(
-    options?.async ? "/admin/users/broadcast-photo-async" : "/admin/users/broadcast-photo",
+    options?.async
+      ? "/admin/users/broadcast-photo-async"
+      : "/admin/users/broadcast-photo",
     {
       method: "POST",
       body: JSON.stringify({
         dryRun: false,
         limit,
+
+        audienceType: d.audienceType || "all",
+        segmentType: d.segmentType || "",
+        segmentValue: d.segmentValue || "",
+        username: d.username || "",
+        templateId: d.templateId || "",
+
         photoUrl: d.photoUrl,
         text: d.text,
         buttonText: d.buttonText,
@@ -4232,6 +4754,29 @@ bot.on("text", async (ctx) => {
 
     const step = BROADCAST_STEPS[broadcastState.step];
     const d = broadcastState.data || defaultBroadcastData();
+
+    if (
+      step === "segmentType" &&
+      d.audienceType === "username"
+    ) {
+      const username = String(ctx.message?.text || "")
+        .trim()
+        .replace(/^@/, "");
+
+      if (!username) {
+        return ctx.reply("Введите корректный username.");
+      }
+
+      d.username = username;
+      broadcastState.data = d;
+
+      broadcastState.step =
+        BROADCAST_STEPS.indexOf("templateChoice");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
 
     if (step === "photo") {
       const photoUrl = String(ctx.message?.text || "").trim();
