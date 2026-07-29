@@ -980,12 +980,35 @@ const askBroadcastStep = async (ctx) => {
     );
   }
 
+  const sendButtonText =
+    d.audienceType === "username"
+      ? "✅ Отправить клиенту"
+      : d.audienceType === "segment"
+      ? "✅ Отправить сегменту"
+      : "✅ Отправить всем";
+
   const confirmKeyboard = Markup.inlineKeyboard([
-    [Markup.button.callback("🧪 Тест на 5 пользователей", "broadcast_test")],
-    [Markup.button.callback("✅ Отправить всем", "broadcast_confirm")],
     [
-      Markup.button.callback("⬅️ Назад", "broadcast_back"),
-      Markup.button.callback("✖️ Отмена", "broadcast_cancel"),
+      Markup.button.callback(
+        "🧪 Тест на 5 пользователей",
+        "broadcast_test"
+      ),
+    ],
+    [
+      Markup.button.callback(
+        sendButtonText,
+        "broadcast_confirm"
+      ),
+    ],
+    [
+      Markup.button.callback(
+        "⬅️ Назад",
+        "broadcast_back"
+      ),
+      Markup.button.callback(
+        "✖️ Отмена",
+        "broadcast_cancel"
+      ),
     ],
   ]);
 
@@ -4563,19 +4586,29 @@ const runBroadcastFromState = async (ctx, options = {}) => {
     {
       method: "POST",
       body: JSON.stringify({
+
         dryRun: false,
+
         limit,
 
         audienceType: d.audienceType || "all",
+
         segmentType: d.segmentType || "",
+
         segmentValue: d.segmentValue || "",
+
         username: d.username || "",
+
         templateId: d.templateId || "",
 
         photoUrl: d.photoUrl,
+
         text: d.text,
+
         buttonText: d.buttonText,
+
         buttonUrl: d.buttonUrl,
+
       }),
     }
   );
