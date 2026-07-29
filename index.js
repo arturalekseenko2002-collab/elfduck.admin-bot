@@ -175,13 +175,45 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
   const timerKey = `${chatId}:${safeJobId}`;
 
   const prevTimer = broadcastPollTimers.get(timerKey);
-  if (prevTimer) clearInterval(prevTimer);
+
+  if (prevTimer) {
+    clearTimeout(prevTimer);
+    broadcastPollTimers.delete(timerKey);
+  }
 
   let lastText = "";
   let attempts = 0;
-  let timer = null;
+  let stopped = false;
+
+  const stopPolling = () => {
+    stopped = true;
+
+    const currentTimer =
+      broadcastPollTimers.get(timerKey);
+
+    if (currentTimer) {
+      clearTimeout(currentTimer);
+    }
+
+    broadcastPollTimers.delete(timerKey);
+  };
+
+  const scheduleNextPoll = () => {
+    if (stopped) return;
+
+    const timer = setTimeout(() => {
+      poll();
+    }, 2000);
+
+    broadcastPollTimers.set(
+      timerKey,
+      timer
+    );
+  };
 
   const poll = async () => {
+    if (stopped) return;
+
     attempts += 1;
 
     try {
@@ -190,17 +222,25 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
       );
 
       const job = data?.job || {};
-      const text = formatBroadcastJobStatus(job);
+      const text =
+        formatBroadcastJobStatus(job);
 
-      console.log("[BROADCAST STATUS POLL]", {
-        jobId: safeJobId,
-        status: job?.status,
-        processed: job?.processed,
-        totalUsers: job?.totalUsers,
-        sent: job?.sent,
-        failed: job?.failed,
-        blocked: job?.blocked,
-      });
+      const status = String(
+        job?.status || "running"
+      );
+
+      console.log(
+        "[BROADCAST STATUS POLL]",
+        {
+          jobId: safeJobId,
+          status,
+          processed: job?.processed,
+          totalUsers: job?.totalUsers,
+          sent: job?.sent,
+          failed: job?.failed,
+          blocked: job?.blocked,
+        }
+      );
 
       if (text !== lastText) {
         try {
@@ -224,52 +264,62 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
           );
 
           if (
-            !description.includes(
+            description.includes(
               "message is not modified"
             )
           ) {
-            console.error(
-              "broadcast status edit failed:",
-              description
-            );
-          } else {
             lastText = text;
+          } else {
+            console.error(
+              "[BROADCAST STATUS EDIT FAILED]",
+              {
+                jobId: safeJobId,
+                chatId,
+                messageId: safeMessageId,
+                description,
+                error: editError,
+              }
+            );
           }
         }
       }
 
       if (
-        ["done", "failed"].includes(
-          String(job?.status || "")
-        )
+        ["done", "failed"].includes(status)
       ) {
-        if (timer) clearInterval(timer);
-        broadcastPollTimers.delete(timerKey);
+        stopPolling();
+        return;
       }
+
+      if (attempts >= 120) {
+        stopPolling();
+        return;
+      }
+
+      scheduleNextPoll();
     } catch (error) {
       console.error(
-        "broadcast status polling failed:",
-        error?.message || error
+        "[BROADCAST STATUS POLLING FAILED]",
+        {
+          jobId: safeJobId,
+          attempt: attempts,
+          error:
+            error?.stack ||
+            error?.message ||
+            error,
+        }
       );
 
-      if (attempts > 120) {
-        if (timer) clearInterval(timer);
-        broadcastPollTimers.delete(timerKey);
+      if (attempts >= 120) {
+        stopPolling();
+        return;
       }
+
+      scheduleNextPoll();
     }
   };
 
   poll();
-
-  timer = setInterval(
-    poll,
-    2000
-  );
-
-  broadcastPollTimers.set(
-    timerKey,
-    timer
-  );
 };
 
 function translitRuToLat(input) {
