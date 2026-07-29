@@ -928,7 +928,7 @@ const askBroadcastStep = async (ctx) => {
           ...BROADCAST_TEMPLATES.map((template) => [
             Markup.button.callback(
               template.title,
-              `broadcast_template:${template.id}`
+                `broadcast_template:${template._id}`
             ),
           ]),
           [
@@ -4774,6 +4774,43 @@ bot.action("promo_code_confirm", async (ctx) => {
       `❌ Ошибка:\n\n${e.message}`
     );
   }
+});
+
+bot.action(/^broadcast_template:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const value = ctx.match[1];
+
+  const st = getState(ctx.chat.id);
+
+  if (!st || st.mode !== "broadcast") return;
+
+  if (value === "custom") {
+    st.data.templateId = "";
+    st.step++;
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+
+  const template = getBroadcastTemplateById(value);
+
+  if (!template) {
+    return ctx.reply("❌ Шаблон не найден.");
+  }
+
+  st.data.templateId = String(template._id);
+  st.data.photoUrl = template.photoUrl || "";
+  st.data.text = template.text || "";
+  st.data.buttonText = template.buttonText || "";
+  st.data.buttonUrl = template.buttonUrl || "";
+
+  st.step = BROADCAST_STEPS.indexOf("confirm");
+
+  setState(ctx.chat.id, st);
+
+  return askBroadcastStep(ctx);
 });
 
 // ----- text inputs for steps -----
