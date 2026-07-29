@@ -233,26 +233,48 @@ function translitRuToLat(input) {
 // ====================== UI MENU =======================
 // =====================================================
 const managerMainMenu = () =>
+
   Markup.inlineKeyboard([
-    [Markup.button.callback("📦 Наличие", "fl_builder_start")],
-    [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
-    [Markup.button.callback("🎟 Промокоды", "promo_codes_menu")],
-    [Markup.button.callback("📨 Сообщение клиенту от курьера", "courier_msg_main")],
-    [Markup.button.callback("🏪 Точка самовывоза", "pp_list")],
+
+    [
+
+      Markup.button.callback("📦 Наличие", "fl_builder_start"),
+
+      Markup.button.callback("💰 Кэшбек", "cashback_grant_start"),
+
+    ],
+
+    [
+
+      Markup.button.callback("🎟 Промокоды", "promo_codes_menu"),
+
+      Markup.button.callback("🏪 Самовывоз", "pp_list"),
+
+    ],
+
   ]);
 
 const superAdminMainMenu = () =>
   Markup.inlineKeyboard([
-    [Markup.button.callback("➕ Создать категорию (конструктор)", "cat_builder_start")],
-    [Markup.button.callback("➕ Создать товар (конструктор)", "prod_builder_start")],
-    [Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start")],
-    [Markup.button.callback("💰 Начислить кэшбек по @username", "cashback_grant_start")],
-    [Markup.button.callback("🎟 Промокоды", "promo_codes_menu")],
-    [Markup.button.callback("📣 Рассылка всем", "broadcast_start")],
-    [Markup.button.callback("📨 Сообщение клиенту от курьера", "courier_msg_main")],
-    [Markup.button.callback("🏪 Точки самовывоза", "pp_list")],
-    [Markup.button.callback("✏️ Редактировать категорию", "cat_edit_start")],
-    [Markup.button.callback("📋 Список категорий", "cat_list")],
+    [
+      Markup.button.callback("➕ Категория", "cat_builder_start"),
+      Markup.button.callback("➕ Товар", "prod_builder_start"),
+    ],
+    [
+      Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start"),
+      Markup.button.callback("💰 Кэшбек", "cashback_grant_start"),
+    ],
+    [
+      Markup.button.callback("🎟 Промокоды", "promo_codes_menu"),
+      Markup.button.callback("📣 Рассылка", "broadcast_start"),
+    ],
+    [
+      Markup.button.callback("🏪 Точки", "pp_list"),
+      Markup.button.callback("✏️ Категории", "cat_edit_start"),
+    ],
+    [
+      Markup.button.callback("📋 Список категорий", "cat_list"),
+    ],
   ]);
 
 const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : managerMainMenu());
