@@ -914,7 +914,13 @@ const FL_BUILDER_STEPS = [
 ];
 
 const defaultFlavorBuilderData = () => ({
+
+  categoryKey: "",
+
+  categoryTitle: "",
+
   productId: "",
+
   productTitle: "",
 
   mode: "",
@@ -989,27 +995,118 @@ const askFlavorStep = async (ctx) => {
   const d = st.data || {};
   const preview = renderFlavorBuilderPreview(d);
 
-  // 1) выбрать товар
+  // 1) сначала выбрать категорию, затем товар
   if (step === "product") {
-    const r = await fetch(`${API_URL}/products?active=0`);
+    if (!d.categoryKey) {
+      const r = await fetch(`${API_URL}/categories?active=0`);
+      const data = await r.json().catch(() => ({}));
+
+      const categories = Array.isArray(data)
+        ? data
+        : data.categories || [];
+
+      if (!categories.length) {
+        clearState(ctx.chat.id);
+
+        return ctx.reply(
+          "Категорий пока нет. Сначала создай категорию.",
+          mainMenu(ctx)
+        );
+      }
+
+      const kb = Markup.inlineKeyboard([
+        ...categories
+          .sort(
+            (a, b) =>
+              (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+          )
+          .map((c) => [
+            Markup.button.callback(
+              `${c.isActive ? "✅" : "⛔️"} ${c.title}`,
+              `fl_category:${c.key}`
+            ),
+          ]),
+
+        [
+          Markup.button.callback(
+            "✖️ Отмена",
+            "fl_cancel"
+          ),
+        ],
+      ]);
+
+      return sendStepCard(ctx, {
+        photoUrl: "",
+        caption: `Выберите *категорию*:`,
+        keyboard: kb,
+      });
+    }
+
+    const r = await fetch(
+      `${API_URL}/products?active=0`
+    );
+
     const data = await r.json().catch(() => ({}));
-    const products = data.products || [];
+
+    const products = (data.products || []).filter(
+      (p) =>
+        String(p.categoryKey || "") ===
+        String(d.categoryKey)
+    );
 
     if (!products.length) {
-      clearState(ctx.chat.id);
-      return ctx.reply("Товаров пока нет. Сначала создай товар.", mainMenu(ctx));
+      const kb = Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "⬅️ К категориям",
+            "fl_category_back"
+          ),
+        ],
+
+        [
+          Markup.button.callback(
+            "✖️ Отмена",
+            "fl_cancel"
+          ),
+        ],
+      ]);
+
+      return sendStepCard(ctx, {
+        photoUrl: "",
+        caption: `В этой категории пока нет товаров.`,
+        keyboard: kb,
+      });
     }
 
     const kb = Markup.inlineKeyboard([
       ...products
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .sort(
+          (a, b) =>
+            (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+        )
         .map((p) => [
           Markup.button.callback(
-            `${p.isActive ? "✅" : "⛔️"} ${(p.title1 || "").trim()} ${(p.title2 || "").trim()}`.trim(),
+            `${p.isActive ? "✅" : "⛔️"} ${(
+              p.title1 || ""
+            ).trim()} ${(p.title2 || "").trim()}`.trim(),
+
             `fl_pick_product:${p._id}`
           ),
         ]),
-      [Markup.button.callback("✖️ Отмена", "fl_cancel")],
+
+      [
+        Markup.button.callback(
+          "⬅️ К категориям",
+          "fl_category_back"
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "✖️ Отмена",
+          "fl_cancel"
+        ),
+      ],
     ]);
 
     return sendStepCard(ctx, {
@@ -1019,17 +1116,46 @@ const askFlavorStep = async (ctx) => {
     });
   }
 
-  // 2) режим
+  // 2) действие с выбранной моделью
   if (step === "mode") {
     const kb = Markup.inlineKeyboard([
-      [Markup.button.callback("➕ Добавить новый вкус", "fl_set_mode:new")],
-      [Markup.button.callback("📦 Изменить наличие", "fl_set_mode:stock")],
-      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+      [
+        Markup.button.callback(
+          "➕ Добавить вкус",
+          "fl_set_mode:new"
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "✏️ Изменить наличие",
+          "fl_set_mode:stock"
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "❌ Удалить модель",
+          `fl_delete_ask:${d.productId}`
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "⬅️ Назад",
+          "fl_back"
+        ),
+
+        Markup.button.callback(
+          "✖️ Отмена",
+          "fl_cancel"
+        ),
+      ],
     ]);
 
     return sendStepCard(ctx, {
       photoUrl: "",
-      caption: `Выберите *что делаем*:`,
+      caption: `Выберите *действие*:`,
       keyboard: kb,
     });
   }
@@ -2991,6 +3117,62 @@ bot.action("fl_back", async (ctx) => {
   return askFlavorStep(ctx);
 });
 
+bot.action(/^fl_category:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const categoryKey = String(ctx.match[1] || "");
+
+  try {
+    const r = await fetch(`${API_URL}/categories?active=0`);
+    const data = await r.json().catch(() => ({}));
+
+    const categories = Array.isArray(data)
+      ? data
+      : data.categories || [];
+
+    const category = categories.find(
+      (c) => String(c.key) === categoryKey
+    );
+
+    st.data.categoryKey = categoryKey;
+    st.data.categoryTitle = category?.title || "";
+
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    setState(ctx.chat.id, st);
+
+    return askFlavorStep(ctx);
+  } catch (e) {
+    console.error(e);
+    return ctx.reply("❌ Не удалось загрузить категории.");
+  }
+});
+
+bot.action("fl_category_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  st.data.categoryKey = "";
+  st.data.categoryTitle = "";
+
+  st.data.productId = "";
+  st.data.productTitle = "";
+  st.data.mode = "";
+
+  setState(ctx.chat.id, st);
+
+  return askFlavorStep(ctx);
+});
+
 bot.action(/fl_pick_product:(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
@@ -3010,6 +3192,95 @@ bot.action(/fl_pick_product:(.+)/, async (ctx) => {
 
   setState(ctx.chat.id, st);
   return nextFlavorStep(ctx);
+});
+
+bot.action(/^fl_delete_ask:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const productId = String(ctx.match[1] || "");
+
+  return ctx.reply(
+    `❌ *Удалить модель?*
+
+*${st.data.productTitle || "Модель"}*
+
+Будут удалены:
+
+• модель
+• все вкусы
+• все остатки
+
+Это действие необратимо.`,
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "✅ Да, удалить",
+            `fl_delete_confirm:${productId}`
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "⬅️ Отмена",
+            "fl_delete_cancel"
+          ),
+        ],
+      ]),
+    }
+  );
+});
+
+bot.action("fl_delete_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  st.step = FL_BUILDER_STEPS.indexOf("mode");
+
+  setState(ctx.chat.id, st);
+
+  return askFlavorStep(ctx);
+});
+
+bot.action(/^fl_delete_confirm:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const productId = String(ctx.match[1] || "");
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  try {
+    await api(`/admin/products/${productId}`, {
+      method: "DELETE",
+    });
+
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    st.step = FL_BUILDER_STEPS.indexOf("product");
+
+    setState(ctx.chat.id, st);
+
+    await ctx.reply("✅ Модель удалена.");
+
+    return askFlavorStep(ctx);
+  } catch (e) {
+    console.error(e);
+
+    return ctx.reply(
+      `❌ Ошибка удаления:\n${e.message}`
+    );
+  }
 });
 
 bot.action(/fl_set_mode:(new|stock)/, async (ctx) => {
