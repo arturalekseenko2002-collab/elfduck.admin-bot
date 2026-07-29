@@ -244,15 +244,23 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
 
       if (text !== lastText) {
         try {
-          await ctx.telegram.editMessageText(
-            chatId,
-            safeMessageId,
-            undefined,
-            text,
-            {
-              parse_mode: "Markdown",
-            }
-          );
+        await bot.telegram.editMessageText(
+
+          Number(chatId),
+
+          safeMessageId,
+
+          undefined,
+
+          text,
+
+          {
+
+            parse_mode: "Markdown",
+
+          }
+
+        );
 
           lastText = text;
         } catch (editError) {
@@ -263,23 +271,48 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
               ""
           );
 
-          if (
-            description.includes(
-              "message is not modified"
-            )
-          ) {
+          if (description.includes("message is not modified")) {
             lastText = text;
           } else {
-            console.error(
-              "[BROADCAST STATUS EDIT FAILED]",
-              {
-                jobId: safeJobId,
-                chatId,
-                messageId: safeMessageId,
-                description,
-                error: editError,
+            console.error("[BROADCAST STATUS EDIT FAILED]", {
+              jobId: safeJobId,
+              chatId,
+              messageId: safeMessageId,
+              description,
+            });
+
+            if (["done", "failed"].includes(status)) {
+              try {
+                const fallbackMessage =
+                  await bot.telegram.sendMessage(
+                    Number(chatId),
+                    text,
+                    {
+                      parse_mode: "Markdown",
+                    }
+                  );
+
+                const fallbackMessageId = Number(
+                  fallbackMessage?.message_id || 0
+                );
+
+                if (fallbackMessageId) {
+                  lastBotMessageIdByChat.set(
+                    String(chatId),
+                    fallbackMessageId
+                  );
+                }
+
+                lastText = text;
+              } catch (fallbackError) {
+                console.error(
+                  "[BROADCAST STATUS FALLBACK FAILED]",
+                  fallbackError?.response?.description ||
+                    fallbackError?.message ||
+                    fallbackError
+                );
               }
-            );
+            }
           }
         }
       }
