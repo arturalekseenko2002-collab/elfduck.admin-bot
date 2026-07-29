@@ -4680,6 +4680,18 @@ bot.action("broadcast_start", async (ctx) => {
   });
 });
 
+bot.action("broadcast_new", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "broadcast",
+    step: 0,
+    data: defaultBroadcastData(),
+  });
+
+  return askBroadcastStep(ctx);
+});
+
 bot.action("broadcast_cancel", async (ctx) => {
   await ctx.answerCbQuery();
   clearState(ctx.chat.id);
