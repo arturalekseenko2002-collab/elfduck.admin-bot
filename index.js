@@ -179,38 +179,83 @@ const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
 
   let lastText = "";
   let attempts = 0;
+  let timer = null;
 
-  const timer = setInterval(async () => {
+  const poll = async () => {
     attempts += 1;
 
     try {
-      const data = await api(`/admin/users/broadcast-jobs/${safeJobId}`);
+      const data = await api(
+        `/admin/users/broadcast-jobs/${safeJobId}`
+      );
+
       const job = data?.job || {};
       const text = formatBroadcastJobStatus(job);
 
       if (text !== lastText) {
-        lastText = text;
-
         try {
-          await ctx.telegram.editMessageText(chatId, safeMessageId, undefined, text, {
-            parse_mode: "Markdown",
-          });
-        } catch {}
+          await ctx.telegram.editMessageText(
+            chatId,
+            safeMessageId,
+            undefined,
+            text,
+            {
+              parse_mode: "Markdown",
+            }
+          );
+
+          lastText = text;
+        } catch (editError) {
+          const description = String(
+            editError?.response?.description ||
+              editError?.message ||
+              editError ||
+              ""
+          );
+
+          if (
+            !description.includes(
+              "message is not modified"
+            )
+          ) {
+            console.error(
+              "broadcast status edit failed:",
+              description
+            );
+          } else {
+            lastText = text;
+          }
+        }
       }
 
       if (String(job?.status || "") === "done") {
-        clearInterval(timer);
+        if (timer) clearInterval(timer);
         broadcastPollTimers.delete(timerKey);
       }
-    } catch (e) {
+    } catch (error) {
+      console.error(
+        "broadcast status polling failed:",
+        error?.message || error
+      );
+
       if (attempts > 120) {
-        clearInterval(timer);
+        if (timer) clearInterval(timer);
         broadcastPollTimers.delete(timerKey);
       }
     }
-  }, 5000);
+  };
 
-  broadcastPollTimers.set(timerKey, timer);
+  poll();
+
+  timer = setInterval(
+    poll,
+    2000
+  );
+
+  broadcastPollTimers.set(
+    timerKey,
+    timer
+  );
 };
 
 function translitRuToLat(input) {
