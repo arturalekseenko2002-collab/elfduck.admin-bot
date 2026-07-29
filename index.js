@@ -609,6 +609,163 @@ const defaultBroadcastData = () => ({
 
 });
 
+const BROADCAST_TEMPLATE_STEPS = [
+  "title",
+  "photoUrl",
+  "text",
+  "buttonText",
+  "buttonUrl",
+  "confirm",
+];
+
+const defaultBroadcastTemplateData = () => ({
+  id: "",
+  title: "",
+  photoUrl: "",
+  text: "",
+  buttonText: "",
+  buttonUrl: "",
+});
+
+const renderBroadcastTemplatePreview = (d = {}) => [
+  "📂 *Шаблон*",
+  "",
+  `Название: *${d.title || "—"}*`,
+  `Фото: ${d.photoUrl ? "✅" : "—"}`,
+  `Текст: ${d.text ? "✅" : "—"}`,
+  `Кнопка: *${d.buttonText || "—"}*`,
+  `Ссылка: ${d.buttonUrl || "—"}*`,
+].join("\n");
+
+const broadcastTemplateNav = (step) => {
+  if (step > 0) {
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          "⬅️ Назад",
+          "broadcast_template_back"
+        ),
+        Markup.button.callback(
+          "✖️ Отмена",
+          "broadcast_templates"
+        ),
+      ],
+    ]);
+  }
+
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        "✖️ Отмена",
+        "broadcast_templates"
+      ),
+    ],
+  ]);
+};
+
+const askBroadcastTemplateStep = async (ctx) => {
+
+  const st = getState(ctx.chat.id);
+
+  if (!st) return;
+
+  if (
+    st.mode !== "broadcast_template_create" &&
+    st.mode !== "broadcast_template_edit"
+  ) {
+    return;
+  }
+
+  const step =
+    BROADCAST_TEMPLATE_STEPS[st.step];
+
+  const preview =
+    renderBroadcastTemplatePreview(st.data);
+
+  switch (step) {
+
+    case "title":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите название шаблона.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "photoUrl":
+
+      return ctx.reply(
+        preview +
+          "\n\nОтправьте URL картинки.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "text":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите текст сообщения.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "buttonText":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите текст кнопки.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "buttonUrl":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите ссылку кнопки.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "confirm":
+
+      return ctx.reply(
+        preview +
+          "\n\nСохранить шаблон?",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "💾 Сохранить",
+                "broadcast_template_save"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "⬅️ Назад",
+                "broadcast_template_back"
+              ),
+            ],
+          ]),
+        }
+      );
+  }
+
+};
+
 let BROADCAST_TEMPLATES = [];
 
 const loadBroadcastTemplates = async () => {
@@ -4871,6 +5028,239 @@ bot.action(
   }
 );
 
+bot.action(
+  /^broadcast_default_template:(.+)$/,
+  async (ctx) => {
+    await ctx.answerCbQuery("Сохраняю...");
+
+    try {
+      await api(
+        `/admin/broadcast/templates/${ctx.match[1]}/default`,
+        {
+          method: "POST",
+        }
+      );
+
+      await loadBroadcastTemplates();
+
+      const template = getBroadcastTemplateById(
+        ctx.match[1]
+      );
+
+      return ctx.reply(
+        `⭐ Шаблон "${template?.title || ""}" теперь используется по умолчанию.`,
+        {
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "⬅️ К шаблонам",
+                "broadcast_templates"
+              ),
+            ],
+          ]),
+        }
+      );
+    } catch (e) {
+      return ctx.reply(`❌ ${e.message}`);
+    }
+  }
+);
+
+bot.action(
+  /^broadcast_delete_template:(.+)$/,
+  async (ctx) => {
+    await ctx.answerCbQuery();
+
+    const template =
+      getBroadcastTemplateById(ctx.match[1]);
+
+    if (!template) {
+      return ctx.reply("❌ Шаблон не найден.");
+    }
+
+    return ctx.reply(
+      `Удалить шаблон *${template.title}*?`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "🗑 Да, удалить",
+              `broadcast_delete_template_confirm:${template._id}`
+            ),
+          ],
+          [
+            Markup.button.callback(
+              "⬅️ Назад",
+              `broadcast_template_manage:${template._id}`
+            ),
+          ],
+        ]),
+      }
+    );
+  }
+);
+
+bot.action(
+  /^broadcast_delete_template_confirm:(.+)$/,
+  async (ctx) => {
+    await ctx.answerCbQuery("Удаляю...");
+
+    try {
+      await api(
+        `/admin/broadcast/templates/${ctx.match[1]}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      await loadBroadcastTemplates();
+
+      return bot.telegram.sendMessage(
+        ctx.chat.id,
+        "✅ Шаблон удалён.",
+        {
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "📂 Шаблоны",
+                "broadcast_templates"
+              ),
+            ],
+          ]),
+        }
+      );
+    } catch (e) {
+      return ctx.reply(`❌ ${e.message}`);
+    }
+  }
+);
+
+bot.action("broadcast_template_back", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+
+  if (
+    !st ||
+    (
+      st.mode !== "broadcast_template_create" &&
+      st.mode !== "broadcast_template_edit"
+    )
+  ) {
+    return;
+  }
+
+  st.step = Math.max(0, st.step - 1);
+
+  setState(ctx.chat.id, st);
+
+  return askBroadcastTemplateStep(ctx);
+});
+
+bot.action("broadcast_template_save", async (ctx) => {
+  await ctx.answerCbQuery("Сохраняю...");
+
+  const st = getState(ctx.chat.id);
+
+  if (
+    !st ||
+    (
+      st.mode !== "broadcast_template_create" &&
+      st.mode !== "broadcast_template_edit"
+    )
+  ) {
+    return;
+  }
+
+  try {
+    if (st.mode === "broadcast_template_create") {
+
+      await api("/admin/broadcast/templates", {
+        method: "POST",
+        body: JSON.stringify({
+          title: st.data.title,
+          photoUrl: st.data.photoUrl,
+          text: st.data.text,
+          buttonText: st.data.buttonText,
+          buttonUrl: st.data.buttonUrl,
+        }),
+      });
+
+    } else {
+
+      await api(
+        `/admin/broadcast/templates/${st.data.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            title: st.data.title,
+            photoUrl: st.data.photoUrl,
+            text: st.data.text,
+            buttonText: st.data.buttonText,
+            buttonUrl: st.data.buttonUrl,
+          }),
+        }
+      );
+
+    }
+
+    await loadBroadcastTemplates();
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      "✅ Шаблон сохранён.",
+      {
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "📂 К шаблонам",
+              "broadcast_templates"
+            ),
+          ],
+        ]),
+      }
+    );
+
+  } catch (e) {
+    return ctx.reply(`❌ ${e.message}`);
+  }
+});
+
+bot.action(
+  /^broadcast_edit_template:(.+)$/,
+  async (ctx) => {
+
+    await ctx.answerCbQuery();
+
+    await loadBroadcastTemplates();
+
+    const template =
+      getBroadcastTemplateById(ctx.match[1]);
+
+    if (!template) {
+      return ctx.reply("❌ Шаблон не найден.");
+    }
+
+    setState(ctx.chat.id, {
+      mode: "broadcast_template_edit",
+      step: 0,
+      data: {
+        id: String(template._id),
+        title: template.title || "",
+        photoUrl: template.photoUrl || "",
+        text: template.text || "",
+        buttonText: template.buttonText || "",
+        buttonUrl: template.buttonUrl || "",
+      },
+    });
+
+    return askBroadcastTemplateStep(ctx);
+
+  }
+);
+
 // ----- text inputs for steps -----
 bot.on("text", async (ctx) => {
   if (!isAdmin(ctx)) return;
@@ -4988,9 +5378,78 @@ bot.on("text", async (ctx) => {
   }
 
   const st = getState(ctx.chat.id);
+
   if (!st) return;
 
-    if (st.mode === "promo_code_create") {
+  // ================= BROADCAST TEMPLATE WIZARD =================
+
+  if (
+
+    st.mode === "broadcast_template_create" ||
+
+    st.mode === "broadcast_template_edit"
+
+  ) {
+
+    const step = BROADCAST_TEMPLATE_STEPS[st.step];
+
+    switch (step) {
+
+      case "title":
+
+        st.data.title = text;
+
+        break;
+
+      case "photoUrl":
+
+        if (!isValidUrl(text)) {
+
+          return ctx.reply("❌ Укажите корректную ссылку.");
+
+        }
+
+        st.data.photoUrl = text;
+
+        break;
+
+      case "text":
+
+        st.data.text = text;
+
+        break;
+
+      case "buttonText":
+
+        st.data.buttonText = text;
+
+        break;
+
+      case "buttonUrl":
+
+        if (!isValidUrl(text)) {
+
+          return ctx.reply("❌ Укажите корректную ссылку.");
+
+        }
+
+        st.data.buttonUrl = text;
+
+        break;
+
+    }
+
+    st.step++;
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastTemplateStep(ctx);
+
+  }
+
+  // ===== PROMO CODES =====
+
+  if (st.mode === "promo_code_create") {
     const step = PROMO_CODE_STEPS[st.step];
     const data = st.data || defaultPromoCodeData();
 
