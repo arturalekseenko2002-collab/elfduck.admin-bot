@@ -63,6 +63,11 @@ const replaceBotMessage = async (ctx, sendFn) => {
 };
 
 bot.use(async (ctx, next) => {
+  if (ctx?.update?.__fromReplyKeyboard === true) {
+
+    ctx.answerCbQuery = async () => true;
+
+  }
   const originalReply = ctx.reply.bind(ctx);
   const originalReplyWithPhoto = ctx.replyWithPhoto.bind(ctx);
   const originalReplyWithDocument = ctx.replyWithDocument?.bind(ctx);
@@ -234,50 +239,70 @@ function translitRuToLat(input) {
 // =====================================================
 const managerMainMenu = () =>
 
-  Markup.inlineKeyboard([
+  Markup.keyboard([
 
-    [
+    ["📦 Наличие", "💰 Кэшбек"],
 
-      Markup.button.callback("📦 Наличие", "fl_builder_start"),
+    ["🎟 Промокоды", "🏪 Самовывоз"],
 
-      Markup.button.callback("💰 Кэшбек", "cashback_grant_start"),
+  ])
 
-    ],
+    .resize()
 
-    [
-
-      Markup.button.callback("🎟 Промокоды", "promo_codes_menu"),
-
-      Markup.button.callback("🏪 Самовывоз", "pp_list"),
-
-    ],
-
-  ]);
+    .persistent();
 
 const superAdminMainMenu = () =>
-  Markup.inlineKeyboard([
-    [
-      Markup.button.callback("➕ Категория", "cat_builder_start"),
-      Markup.button.callback("➕ Товар", "prod_builder_start"),
-    ],
-    [
-      Markup.button.callback("🍓 Вкусы / наличие", "fl_builder_start"),
-      Markup.button.callback("💰 Кэшбек", "cashback_grant_start"),
-    ],
-    [
-      Markup.button.callback("🎟 Промокоды", "promo_codes_menu"),
-      Markup.button.callback("📣 Рассылка", "broadcast_start"),
-    ],
-    [
-      Markup.button.callback("🏪 Точки", "pp_list"),
-      Markup.button.callback("✏️ Категории", "cat_edit_start"),
-    ],
-    [
-      Markup.button.callback("📋 Список категорий", "cat_list"),
-    ],
-  ]);
+  Markup.keyboard([
+    ["➕ Категория", "➕ Товар"],
+    ["🍓 Вкусы / наличие", "💰 Кэшбек"],
+    ["🎟 Промокоды", "📣 Рассылка"],
+    ["🏪 Точки", "✏️ Категории"],
+    ["📋 Список категорий"],
+  ])
+    .resize()
+    .persistent();
 
 const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : managerMainMenu());
+
+const MAIN_MENU_TEXT_TO_CALLBACK = new Map([
+  ["📦 Наличие", "fl_builder_start"],
+  ["🍓 Вкусы / наличие", "fl_builder_start"],
+  ["💰 Кэшбек", "cashback_grant_start"],
+  ["🎟 Промокоды", "promo_codes_menu"],
+  ["🏪 Самовывоз", "pp_list"],
+  ["➕ Категория", "cat_builder_start"],
+  ["➕ Товар", "prod_builder_start"],
+  ["📣 Рассылка", "broadcast_start"],
+  ["🏪 Точки", "pp_list"],
+  ["✏️ Категории", "cat_edit_start"],
+  ["📋 Список категорий", "cat_list"],
+]);
+
+bot.hears(
+  Array.from(MAIN_MENU_TEXT_TO_CALLBACK.keys()),
+  async (ctx) => {
+    if (!isAdmin(ctx)) return;
+
+    const text = String(ctx?.message?.text || "").trim();
+    const callbackData = MAIN_MENU_TEXT_TO_CALLBACK.get(text);
+
+    if (!callbackData) return;
+
+    const syntheticUpdate = {
+      update_id: Number(ctx?.update?.update_id || Date.now()),
+      __fromReplyKeyboard: true,
+      callback_query: {
+        id: `reply-keyboard-${Date.now()}`,
+        from: ctx.from,
+        chat_instance: String(ctx?.chat?.id || ""),
+        data: callbackData,
+        message: ctx.message,
+      },
+    };
+
+    return bot.handleUpdate(syntheticUpdate);
+  }
+);
 
 const pickupPointManagerMenu = (ppId, options = {}) => {
   const isSuper = options?.isSuper === true;
