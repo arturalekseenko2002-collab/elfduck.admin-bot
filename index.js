@@ -1033,12 +1033,12 @@ const askBroadcastStep = async (ctx) => {
       : "✅ Отправить всем";
 
   const confirmKeyboard = Markup.inlineKeyboard([
-    [
-      Markup.button.callback(
-        "🧪 Тест на 5 пользователей",
-        "broadcast_test"
-      ),
-    ],
+    // [
+    //   Markup.button.callback(
+    //     "🧪 Тест на 5 пользователей",
+    //     "broadcast_test"
+    //   ),
+    // ],
     [
       Markup.button.callback(
         sendButtonText,
