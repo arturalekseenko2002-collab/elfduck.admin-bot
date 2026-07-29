@@ -4578,14 +4578,19 @@ bot.action(
     st.data.segmentValue = "";
     st.data.username = "";
 
-    st.step =
-      st.data.audienceType === "all"
-        ? BROADCAST_STEPS.indexOf(
-            "templateChoice"
-          )
-        : BROADCAST_STEPS.indexOf(
-            "segmentType"
-          );
+    if (st.data.audienceType === "all") {
+
+      st.step = st.data.templateId
+
+        ? BROADCAST_STEPS.indexOf("confirm")
+
+        : BROADCAST_STEPS.indexOf("templateChoice");
+
+    } else {
+
+      st.step = BROADCAST_STEPS.indexOf("segmentType");
+
+    }
 
     setState(ctx.chat.id, st);
 
@@ -4637,10 +4642,9 @@ bot.action(
       ctx.match[1] || ""
     ).trim();
 
-    st.step =
-      BROADCAST_STEPS.indexOf(
-        "templateChoice"
-      );
+    st.step = st.data.templateId
+      ? BROADCAST_STEPS.indexOf("confirm")
+      : BROADCAST_STEPS.indexOf("templateChoice");
 
     setState(ctx.chat.id, st);
 
@@ -5017,7 +5021,7 @@ bot.action(
           [
             Markup.button.callback(
               "🚀 Использовать",
-              `broadcast_use_template:${template._id}`
+              `broadcast_template_use:${template._id}`
             ),
           ],
 
@@ -5057,6 +5061,10 @@ bot.action(
 );
 
 bot.action(/^broadcast_template_use:(.+)$/, async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Недостаточно прав");
+  }
+
   await ctx.answerCbQuery();
 
   const templateId = ctx.match[1];
@@ -5071,15 +5079,15 @@ bot.action(/^broadcast_template_use:(.+)$/, async (ctx) => {
 
   setState(ctx.chat.id, {
     mode: "broadcast",
-    step: BROADCAST_STEPS.indexOf("confirm"),
+    step: BROADCAST_STEPS.indexOf("audienceType"),
     data: {
       ...defaultBroadcastData(),
+
       templateId: String(template._id),
       photoUrl: template.photoUrl || "",
       text: template.text || "",
       buttonText: template.buttonText || "",
       buttonUrl: template.buttonUrl || "",
-      audienceType: "all",
     },
   });
 
