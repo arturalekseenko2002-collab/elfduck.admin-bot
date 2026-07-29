@@ -4655,13 +4655,29 @@ bot.action("broadcast_start", async (ctx) => {
 
   await ctx.answerCbQuery();
 
-  setState(ctx.chat.id, {
-    mode: "broadcast",
-    step: 0,
-    data: defaultBroadcastData(),
+  return ctx.reply("📣 *Рассылки*", {
+    parse_mode: "Markdown",
+    ...Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          "📨 Новая рассылка",
+          "broadcast_new"
+        ),
+      ],
+      [
+        Markup.button.callback(
+          "📂 Шаблоны",
+          "broadcast_templates"
+        ),
+      ],
+      [
+        Markup.button.callback(
+          "⬅️ Назад",
+          "menu"
+        ),
+      ],
+    ]),
   });
-
-  return askBroadcastStep(ctx);
 });
 
 bot.action("broadcast_cancel", async (ctx) => {
