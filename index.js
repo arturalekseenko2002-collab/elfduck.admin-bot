@@ -1071,7 +1071,7 @@ const askBroadcastStep = async (ctx) => {
   }
 
   return ctx.reply(
-    `${preview}\n\nПроверь сообщение. Сначала лучше отправить тест на 5 пользователей.`,
+    `${preview}\n\nПроверь сообщение перед отправкой.`,
     {
       parse_mode: "Markdown",
       ...confirmKeyboard,
