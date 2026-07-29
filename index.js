@@ -4491,65 +4491,6 @@ bot.action(
   }
 );
 
-bot.action(
-  /^broadcast_template:(.+)$/,
-  async (ctx) => {
-    if (!isSuperAdmin(ctx)) {
-      return ctx.answerCbQuery("No access");
-    }
-
-    await ctx.answerCbQuery();
-
-    const st = getState(ctx.chat.id);
-
-    if (!st || st.mode !== "broadcast") return;
-
-    const templateId = String(
-      ctx.match[1] || ""
-    ).trim();
-
-    const template =
-      getBroadcastTemplateById(templateId);
-
-    st.data.templateId =
-      templateId === "custom"
-        ? ""
-        : templateId;
-
-    if (template) {
-      st.data.photoUrl =
-        template.photoUrl || "";
-
-      st.data.text =
-        template.text || "";
-
-      st.data.buttonText =
-        template.buttonText ||
-        "Открыть ELF DUCK";
-
-      st.data.buttonUrl =
-        template.buttonUrl ||
-        "https://elf-duck.vercel.app/";
-    } else {
-      st.data.photoUrl = "";
-      st.data.text = "";
-
-      st.data.buttonText =
-        "Открыть ELF DUCK";
-
-      st.data.buttonUrl =
-        "https://elf-duck.vercel.app/referral";
-    }
-
-    st.step =
-      BROADCAST_STEPS.indexOf("photo");
-
-    setState(ctx.chat.id, st);
-
-    return askBroadcastStep(ctx);
-  }
-);
-
 bot.action("broadcast_start", async (ctx) => {
   if (!isSuperAdmin(ctx)) {
     return ctx.answerCbQuery("Недостаточно прав");
@@ -4812,6 +4753,123 @@ bot.action(/^broadcast_template:(.+)$/, async (ctx) => {
 
   return askBroadcastStep(ctx);
 });
+
+bot.action("broadcast_templates", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  await loadBroadcastTemplates();
+
+  return ctx.reply(
+    "📂 *Шаблоны рассылок*",
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "➕ Создать шаблон",
+            "broadcast_template_create"
+          ),
+        ],
+
+        ...BROADCAST_TEMPLATES.map((template) => [
+          Markup.button.callback(
+            `${template.isDefault ? "⭐ " : ""}${template.title}`,
+            `broadcast_template_manage:${template._id}`
+          ),
+        ]),
+
+        [
+          Markup.button.callback(
+            "⬅️ Назад",
+            "broadcast_start"
+          ),
+        ],
+      ]),
+    }
+  );
+});
+
+bot.action("broadcast_template_create", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "broadcast_template_create",
+    step: 0,
+    data: {
+      title: "",
+      photoUrl: "",
+      text: "",
+      buttonText: "",
+      buttonUrl: "",
+    },
+  });
+
+  return ctx.reply(
+    "📝 Введите название шаблона."
+  );
+});
+
+bot.action(
+  /^broadcast_template_manage:(.+)$/,
+  async (ctx) => {
+    await ctx.answerCbQuery();
+
+    await loadBroadcastTemplates();
+
+    const template = getBroadcastTemplateById(
+      ctx.match[1]
+    );
+
+    if (!template) {
+      return ctx.reply("❌ Шаблон не найден.");
+    }
+
+    return ctx.reply(
+      `📄 *${template.title}*`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "🚀 Использовать",
+              `broadcast_use_template:${template._id}`
+            ),
+          ],
+
+          [
+            Markup.button.callback(
+              "✏️ Изменить",
+              `broadcast_edit_template:${template._id}`
+            ),
+          ],
+
+          [
+            Markup.button.callback(
+              template.isDefault
+                ? "⭐ По умолчанию"
+                : "⭐ Сделать по умолчанию",
+              `broadcast_default_template:${template._id}`
+            ),
+          ],
+
+          [
+            Markup.button.callback(
+              "🗑 Удалить",
+              `broadcast_delete_template:${template._id}`
+            ),
+          ],
+
+          [
+            Markup.button.callback(
+              "⬅️ Назад",
+              "broadcast_templates"
+            ),
+          ],
+        ]),
+      }
+    );
+  }
+);
 
 // ----- text inputs for steps -----
 bot.on("text", async (ctx) => {
