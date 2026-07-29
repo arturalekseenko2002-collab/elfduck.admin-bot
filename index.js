@@ -5056,6 +5056,36 @@ bot.action(
   }
 );
 
+bot.action(/^broadcast_template_use:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const templateId = ctx.match[1];
+
+  await loadBroadcastTemplates();
+
+  const template = getBroadcastTemplateById(templateId);
+
+  if (!template) {
+    return ctx.reply("❌ Шаблон не найден.");
+  }
+
+  setState(ctx.chat.id, {
+    mode: "broadcast",
+    step: BROADCAST_STEPS.indexOf("confirm"),
+    data: {
+      ...defaultBroadcastData(),
+      templateId: String(template._id),
+      photoUrl: template.photoUrl || "",
+      text: template.text || "",
+      buttonText: template.buttonText || "",
+      buttonUrl: template.buttonUrl || "",
+      audienceType: "all",
+    },
+  });
+
+  return askBroadcastStep(ctx);
+});
+
 bot.action(
   /^broadcast_default_template:(.+)$/,
   async (ctx) => {
