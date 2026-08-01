@@ -2861,8 +2861,47 @@ const formatPickupScheduleDates = (scheduleByDate) => {
       ? scheduleByDate
       : {};
 
-  const rows = Object.entries(source)
-    .map(([dateKey, value]) => {
+      const warsawDateParts =
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Warsaw",
+        year: "numeric",
+        month: "2-digit",
+      }).formatToParts(new Date());
+
+    const warsawDateValues =
+      Object.fromEntries(
+        warsawDateParts.map((part) => [
+          part.type,
+          part.value,
+        ])
+      );
+
+    const currentYear = String(
+      warsawDateValues.year || ""
+    );
+
+    const currentMonth = String(
+      warsawDateValues.month || ""
+    ).padStart(2, "0");
+
+    const rows = Object.entries(source)
+      .filter(([dateKey]) => {
+        const dateMatch = String(
+          dateKey
+        ).match(
+          /^(\d{4})-(\d{2})-(\d{2})$/
+        );
+
+        if (!dateMatch) {
+          return false;
+        }
+
+        return (
+          dateMatch[1] === currentYear &&
+          dateMatch[2] === currentMonth
+        );
+      })
+      .map(([dateKey, value]) => {
       const dateMatch = String(
         dateKey
       ).match(
@@ -2946,10 +2985,14 @@ const formatPickupScheduleDates = (scheduleByDate) => {
     );
 
   return rows.length
+
     ? rows
+
         .map((row) => row.text)
+
         .join("\n")
-    : "Добавленных дат пока нет.";
+
+    : "В текущем месяце добавленных дат пока нет.";
 };
 
 // =====================================================
@@ -6787,7 +6830,7 @@ bot.on("text", async (ctx) => {
               : "Статус: *закрыто*",
 
             "",
-            "🗓 *Все добавленные даты:*",
+            "🗓 *График на текущий месяц:*",
             allScheduleDatesText,
           ].join("\n"),
           {
