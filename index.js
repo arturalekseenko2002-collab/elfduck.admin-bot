@@ -5140,39 +5140,78 @@ bot.action("promo_code_back", async (ctx) => {
   return askPromoCodeStep(ctx);
 });
 
-bot.action("promo_code_confirm", async (ctx) => {
-  await ctx.answerCbQuery();
+bot.action(
+  "promo_code_confirm",
+  async (ctx) => {
+    await ctx.answerCbQuery();
 
-  const st = getState(ctx.chat.id);
-
-  if (!st || st.mode !== "promo_code_create") {
-    return;
-  }
-
-  try {
-    const res = await api("/admin/promo-codes", {
-      method: "POST",
-      body: JSON.stringify({
-        code: st.data.code,
-        amountZl: st.data.amountZl,
-      }),
-    });
-
-    clearState(ctx.chat.id);
-
-    return ctx.reply(
-      `✅ Промокод *${res.promoCode.code}* создан.\n\n💰 Начисление: *${Number(res.promoCode.amountZl).toFixed(2)} PLN*`,
-      {
-        parse_mode: "Markdown",
-        ...mainMenu(ctx),
-      }
+    const st = getState(
+      ctx.chat.id
     );
-  } catch (e) {
-    return ctx.reply(
-      `❌ Ошибка:\n\n${e.message}`
-    );
+
+    if (
+      !st ||
+      st.mode !==
+        "promo_code_create"
+    ) {
+      return;
+    }
+
+    try {
+      const res = await api(
+        "/admin/promo-codes",
+        {
+          method: "POST",
+
+          body: JSON.stringify({
+            code:
+              st.data.code,
+
+            amountZl:
+              st.data.amountZl,
+
+            expiresAt:
+              st.data?.expiresAt ||
+              null,
+          }),
+        }
+      );
+
+      const expiresAtInput =
+        String(
+          st.data
+            ?.expiresAtInput ||
+            "без срока"
+        );
+
+      clearState(
+        ctx.chat.id
+      );
+
+      return ctx.reply(
+        [
+          `✅ Промокод *${res.promoCode.code}* создан.`,
+          "",
+          `💰 Начисление: *${Number(
+            res.promoCode
+              .amountZl
+          ).toFixed(2)} PLN*`,
+          `⏳ Действует до: *${expiresAtInput}*`,
+        ].join("\n"),
+        {
+          parse_mode:
+            "Markdown",
+
+          ...mainMenu(ctx),
+        }
+      );
+    } catch (e) {
+      return ctx.reply(
+        `❌ Ошибка:\n\n${e.message}`
+      );
+    }
   }
-});
+);
 
 bot.action(/^broadcast_template:(.+)$/, async (ctx) => {
   await ctx.answerCbQuery();
@@ -5824,8 +5863,203 @@ bot.on("text", async (ctx) => {
       );
 
       st.data = data;
+
       st.step =
-        PROMO_CODE_STEPS.indexOf("confirm");
+        PROMO_CODE_STEPS.indexOf(
+          "expiresAt"
+        );
+
+      setState(ctx.chat.id, st);
+
+      return askPromoCodeStep(ctx);
+    }
+
+    if (step === "expiresAt") {
+      const rawExpiresAt = String(
+        text || ""
+      ).trim();
+
+      if (
+        [
+          "без срока",
+          "бессрочно",
+          "нет",
+          "none",
+        ].includes(
+          rawExpiresAt.toLowerCase()
+        )
+      ) {
+        data.expiresAt = null;
+        data.expiresAtInput =
+          "без срока";
+
+        st.data = data;
+
+        st.step =
+          PROMO_CODE_STEPS.indexOf(
+            "confirm"
+          );
+
+        setState(ctx.chat.id, st);
+
+        return askPromoCodeStep(ctx);
+      }
+
+      const match = rawExpiresAt.match(
+        /^(\d{2})\.(\d{2})\.(\d{4})\s+([01]\d|2[0-3]):([0-5]\d)$/
+      );
+
+      if (!match) {
+        return ctx.reply(
+          "❌ Неверный формат. Используйте `ДД.ММ.ГГГГ ЧЧ:ММ`, например `31.08.2026 23:59`, или отправьте `без срока`.",
+          {
+            parse_mode: "Markdown",
+          }
+        );
+      }
+
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = Number(match[3]);
+      const hours = Number(match[4]);
+      const minutes = Number(match[5]);
+
+      const probe = new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day,
+          hours,
+          minutes
+        )
+      );
+
+      const isRealDate =
+        probe.getUTCFullYear() === year &&
+        probe.getUTCMonth() ===
+          month - 1 &&
+        probe.getUTCDate() === day &&
+        probe.getUTCHours() === hours &&
+        probe.getUTCMinutes() ===
+          minutes;
+
+      if (!isRealDate) {
+        return ctx.reply(
+          "❌ Такой даты или времени не существует."
+        );
+      }
+
+      const getWarsawOffsetMinutes = (
+        date
+      ) => {
+        const parts =
+          new Intl.DateTimeFormat(
+            "en-GB",
+            {
+              timeZone:
+                "Europe/Warsaw",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: false,
+            }
+          ).formatToParts(date);
+
+        const values =
+          Object.fromEntries(
+            parts.map((part) => [
+              part.type,
+              part.value,
+            ])
+          );
+
+        const warsawAsUtc =
+          Date.UTC(
+            Number(values.year),
+            Number(values.month) - 1,
+            Number(values.day),
+            Number(values.hour),
+            Number(values.minute),
+            Number(values.second)
+          );
+
+        return Math.round(
+          (
+            warsawAsUtc -
+            date.getTime()
+          ) / 60000
+        );
+      };
+
+      const requestedUtcMs =
+        Date.UTC(
+          year,
+          month - 1,
+          day,
+          hours,
+          minutes
+        );
+
+      let expiresAt = new Date(
+        requestedUtcMs
+      );
+
+      let offsetMinutes =
+        getWarsawOffsetMinutes(
+          expiresAt
+        );
+
+      expiresAt = new Date(
+        requestedUtcMs -
+          offsetMinutes *
+            60 *
+            1000
+      );
+
+      const correctedOffsetMinutes =
+        getWarsawOffsetMinutes(
+          expiresAt
+        );
+
+      if (
+        correctedOffsetMinutes !==
+        offsetMinutes
+      ) {
+        offsetMinutes =
+          correctedOffsetMinutes;
+
+        expiresAt = new Date(
+          requestedUtcMs -
+            offsetMinutes *
+              60 *
+              1000
+        );
+      }
+
+      if (
+        expiresAt.getTime() <=
+        Date.now()
+      ) {
+        return ctx.reply(
+          "❌ Срок действия должен быть в будущем."
+        );
+      }
+
+      data.expiresAt =
+        expiresAt.toISOString();
+
+      data.expiresAtInput =
+        rawExpiresAt;
+
+      st.data = data;
+
+      st.step =
+        PROMO_CODE_STEPS.indexOf(
+          "confirm"
+        );
 
       setState(ctx.chat.id, st);
 
