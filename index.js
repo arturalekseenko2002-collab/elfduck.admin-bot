@@ -2809,6 +2809,104 @@ bot.action("cashback_grant_confirm", async (ctx) => {
   }
 });
 
+const formatPickupScheduleDates = (scheduleByDate) => {
+  const source =
+    scheduleByDate &&
+    typeof scheduleByDate === "object"
+      ? scheduleByDate
+      : {};
+
+  const rows = Object.entries(source)
+    .map(([dateKey, value]) => {
+      const dateMatch = String(
+        dateKey
+      ).match(
+        /^(\d{4})-(\d{2})-(\d{2})$/
+      );
+
+      if (!dateMatch) {
+        return null;
+      }
+
+      const displayDate =
+        `${dateMatch[3]}.${dateMatch[2]}.${dateMatch[1]}`;
+
+      const timestamp = Date.UTC(
+        Number(dateMatch[1]),
+        Number(dateMatch[2]) - 1,
+        Number(dateMatch[3])
+      );
+
+      if (value?.isOpen !== true) {
+        return {
+          timestamp,
+          text:
+            `• ${displayDate} — закрыто`,
+        };
+      }
+
+      const periods = Array.isArray(
+        value?.periods
+      )
+        ? value.periods
+            .map((period) => {
+              const from = String(
+                period?.from ||
+                  period?.openFrom ||
+                  ""
+              ).trim();
+
+              const to = String(
+                period?.to ||
+                  period?.openTo ||
+                  ""
+              ).trim();
+
+              return from && to
+                ? `${from}-${to}`
+                : "";
+            })
+            .filter(Boolean)
+        : [];
+
+      const fallbackFrom = String(
+        value?.from ||
+          value?.openFrom ||
+          ""
+      ).trim();
+
+      const fallbackTo = String(
+        value?.to ||
+          value?.openTo ||
+          ""
+      ).trim();
+
+      const scheduleLabel =
+        periods.length
+          ? periods.join(" / ")
+          : fallbackFrom && fallbackTo
+          ? `${fallbackFrom}-${fallbackTo}`
+          : "график не указан";
+
+      return {
+        timestamp,
+        text:
+          `• ${displayDate} — ${scheduleLabel}`,
+      };
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        a.timestamp - b.timestamp
+    );
+
+  return rows.length
+    ? rows
+        .map((row) => row.text)
+        .join("\n")
+    : "Добавленных дат пока нет.";
+};
+
 // =====================================================
 // =================== PICKUP POINTS CRUD ==============
 // =====================================================
@@ -6349,9 +6447,48 @@ bot.on("text", async (ctx) => {
 
         );
 
-        const savedDate =
+        let freshPoint = null;
+
+        try {
+          const pointsData = await api(
+            "/pickup-points?active=0"
+          );
+
+          const points = Array.isArray(
+            pointsData
+          )
+            ? pointsData
+            : Array.isArray(
+                pointsData?.pickupPoints
+              )
+            ? pointsData.pickupPoints
+            : [];
+
+          freshPoint =
+            points.find(
+              (point) =>
+                String(
+                  point?._id || ""
+                ) === pickupPointId
+            ) || null;
+        } catch (loadError) {
+          console.error(
+            "load pickup schedules after save error:",
+            loadError
+          );
+        }
+
+        const savedDate = String(
           st.displayDate ||
-          st.dateKey;
+            st.dateKey
+        );
+
+        const allScheduleDatesText =
+          formatPickupScheduleDates(
+            freshPoint?.scheduleByDate || {
+              [st.dateKey]: scheduleValue,
+            }
+          );
 
         clearState(ctx.chat.id);
 
@@ -6360,6 +6497,7 @@ bot.on("text", async (ctx) => {
             "✅ *График сохранён*",
             "",
             `Дата: *${savedDate}*`,
+
             scheduleValue.isOpen
               ? `Время: *${scheduleValue.periods
                   .map(
@@ -6368,6 +6506,10 @@ bot.on("text", async (ctx) => {
                   )
                   .join(" / ")}*`
               : "Статус: *закрыто*",
+
+            "",
+            "🗓 *Все добавленные даты:*",
+            allScheduleDatesText,
           ].join("\n"),
           {
             parse_mode: "Markdown",
@@ -6376,7 +6518,7 @@ bot.on("text", async (ctx) => {
               Markup.inlineKeyboard([
                 [
                   Markup.button.callback(
-                    "🗓 Изменить другую дату",
+                    "➕ Добавить другую дату",
                     `pp_edit_schedule_by_date:${pickupPointId}`
                   ),
                 ],
