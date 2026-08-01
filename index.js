@@ -568,6 +568,10 @@ const defaultPromoCodeData = () => ({
 
   amountZl: 0,
 
+  expiresAt: null,
+
+  expiresAtInput: "без срока",
+
 });
 
 const PROMO_CODE_STEPS = [
@@ -575,6 +579,8 @@ const PROMO_CODE_STEPS = [
   "code",
 
   "amount",
+
+  "expiresAt",
 
   "confirm",
 
@@ -595,14 +601,30 @@ const normalizePromoCodeInput = (value) =>
     .slice(0, 32);
 
 const renderPromoCodePreview = (data = {}) => {
-  const code = String(data?.code || "").trim();
-  const amountZl = Number(data?.amountZl || 0);
+  const code = String(
+    data?.code || ""
+  ).trim();
+
+  const amountZl = Number(
+    data?.amountZl || 0
+  );
+
+  const expiresAtInput = String(
+    data?.expiresAtInput || "без срока"
+  ).trim();
 
   return [
     "🎟 *Промокод — превью*",
     "",
     `• код: *${code || "—"}*`,
-    `• начисление: *${amountZl > 0 ? amountZl.toFixed(2) : "0.00"} PLN*`,
+    `• начисление: *${
+      amountZl > 0
+        ? amountZl.toFixed(2)
+        : "0.00"
+    } PLN*`,
+    `• действует до: *${
+      expiresAtInput || "без срока"
+    }*`,
   ].join("\n");
 };
 
@@ -650,6 +672,27 @@ const askPromoCodeStep = async (ctx) => {
       }
     );
   }
+
+  if (step === "expiresAt") {
+  return ctx.reply(
+    [
+      preview,
+      "",
+      "Введите *срок действия промокода* по времени Варшавы.",
+      "",
+      "Формат: `ДД.ММ.ГГГГ ЧЧ:ММ`",
+      "Пример: `31.08.2026 23:59`",
+      "",
+      "Для промокода без ограничения отправьте: `без срока`",
+    ].join("\n"),
+    {
+      parse_mode: "Markdown",
+      ...promoCodeNavKeyboard(
+        st.step
+      ),
+    }
+  );
+}
 
   return ctx.reply(
     `${preview}\n\nСоздать и активировать этот промокод?`,
