@@ -3235,62 +3235,74 @@ return ctx.reply("Введите новый *адрес* (или `-` чтобы 
 });
 });
 
-bot.action(
-  /pp_edit_schedule_by_date:(.+)/,
-  async (ctx) => {
-    if (!isAdmin(ctx)) {
-      return ctx.answerCbQuery(
-        "No access"
-      );
-    }
+bot.action(/pp_edit_schedule_by_date:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery("No access");
+  }
 
-    await ctx.answerCbQuery();
+  await ctx.answerCbQuery();
 
-    const pickupPointId = String(
-      ctx.match?.[1] || ""
-    ).trim();
+  const pickupPointId = String(
+    ctx.match?.[1] || ""
+  ).trim();
 
-    if (!pickupPointId) {
+  if (!pickupPointId) {
+    return ctx.reply(
+      "❌ Точка не найдена."
+    );
+  }
+
+  const allowed =
+    await isPickupPointManager(
+      ctx,
+      pickupPointId
+    );
+
+  if (!allowed) {
+    return ctx.reply(
+      "❌ Нет доступа."
+    );
+  }
+
+  try {
+    const pointsData = await api(
+      "/pickup-points?active=0"
+    );
+
+    const points = Array.isArray(
+      pointsData
+    )
+      ? pointsData
+      : Array.isArray(
+          pointsData?.pickupPoints
+        )
+      ? pointsData.pickupPoints
+      : [];
+
+    const point =
+      points.find(
+        (item) =>
+          String(
+            item?._id || ""
+          ) === pickupPointId
+      ) || null;
+
+    if (!point) {
       return ctx.reply(
         "❌ Точка не найдена."
       );
     }
 
-    const allowed =
-      await isPickupPointManager(
-        ctx,
-        pickupPointId
+    const monthScheduleText =
+      formatPickupScheduleDates(
+        point?.scheduleByDate || {}
       );
-
-    if (!allowed) {
-      return ctx.answerCbQuery(
-        "Нет доступа",
-        {
-          show_alert: true,
-        }
-      );
-    }
-
-    setState(ctx.chat.id, {
-      mode:
-        "pp_prompt_schedule_by_date",
-
-      step: "date",
-
-      pickupPointId,
-
-      dateKey: "",
-
-      displayDate: "",
-    });
 
     return ctx.reply(
       [
-        "🗓 *График по конкретной дате*",
+        "🗓 *График на текущий месяц:*",
         "",
-        "Введите дату в формате `ДД.ММ.ГГГГ`.",
-        "",
-        "Пример: `21.07.2026`",
+        monthScheduleText,
       ].join("\n"),
       {
         parse_mode: "Markdown",
@@ -3299,21 +3311,98 @@ bot.action(
           Markup.inlineKeyboard([
             [
               Markup.button.callback(
-                "⬅️ К точке",
-                `pp_open:${pickupPointId}`
+                "➕ Добавить другую дату",
+                `pp_add_schedule_date:${pickupPointId}`
               ),
             ],
             [
               Markup.button.callback(
-                "🏠 Меню",
-                "menu"
+                "⬅️ К точке",
+                `pp_open:${pickupPointId}`
               ),
             ],
           ]).reply_markup,
       }
     );
+  } catch (error) {
+    console.error(
+      "pp_edit_schedule_by_date error:",
+      error
+    );
+
+    return ctx.reply(
+      `❌ Не удалось загрузить график: ${error.message}`
+    );
   }
-);
+});
+
+bot.action(/pp_add_schedule_date:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery(
+      "No access"
+    );
+  }
+
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(
+    ctx.match?.[1] || ""
+  ).trim();
+
+  if (!pickupPointId) {
+    return ctx.reply(
+      "❌ Точка не найдена."
+    );
+  }
+
+  const allowed =
+    await isPickupPointManager(
+      ctx,
+      pickupPointId
+    );
+
+  if (!allowed) {
+    return ctx.reply(
+      "❌ Нет доступа."
+    );
+  }
+
+  setState(ctx.chat.id, {
+    mode:
+      "pp_prompt_schedule_by_date",
+
+    step: "date",
+
+    pickupPointId,
+
+    dateKey: "",
+
+    displayDate: "",
+  });
+
+  return ctx.reply(
+    [
+      "🗓 *График по конкретной дате*",
+      "",
+      "Введите дату в формате `ДД.ММ.ГГГГ`.",
+      "",
+      "Пример: `21.07.2026`",
+    ].join("\n"),
+    {
+      parse_mode: "Markdown",
+
+      reply_markup:
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "⬅️ Назад к графику",
+              `pp_edit_schedule_by_date:${pickupPointId}`
+            ),
+          ],
+        ]).reply_markup,
+    }
+  );
+});
 
 bot.action(/pp_edit_orders_chat:(.+)/, async (ctx) => {
   if (!isSuperAdmin(ctx)) {
@@ -6841,8 +6930,8 @@ bot.on("text", async (ctx) => {
                 [
                   Markup.button.callback(
                     "➕ Добавить другую дату",
-                    `pp_edit_schedule_by_date:${pickupPointId}`
-                  ),
+                    `pp_add_schedule_date:${pickupPointId}`
+                  )
                 ],
                 [
                   Markup.button.callback(
