@@ -383,6 +383,8 @@ const managerMainMenu = () =>
 
   Markup.keyboard([
 
+    ["➕ Категория", "➕ Товар"],
+
     ["📦 Наличие", "💰 Кэшбек"],
 
     ["🎟 Промокоды", "🏪 Самовывоз"],
@@ -6758,5 +6760,46 @@ bot.on("photo", async (ctx, next) => {
 // =====================================================
 
 await loadBroadcastTemplates();
+
+try {
+  await bot.telegram.setMyCommands([
+    {
+      command: "menu",
+      description: "Открыть меню",
+    },
+    {
+      command: "start",
+      description: "Запустить бота",
+    },
+  ]);
+
+  await bot.telegram.setChatMenuButton({
+    menuButton: {
+      type: "commands",
+    },
+  });
+
+  console.log(
+    "✅ Telegram menu button configured"
+  );
+} catch (menuError) {
+  console.error(
+    "Telegram menu button setup error:",
+    menuError
+  );
+}
+
+bot.command("menu", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply("Нет доступа.");
+  }
+
+  clearState(ctx.chat.id);
+
+  return ctx.reply(
+    "Главное меню",
+    mainMenu(ctx)
+  );
+});
 
 bot.launch().then(() => console.log("✅ Admin bot launched")); 
