@@ -454,7 +454,17 @@ const pickupPointManagerMenu = (ppId, options = {}) => {
 
   const rows = [
     [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
-    [Markup.button.callback("🕒 График на сегодня", `pp_edit_today_schedule:${ppId}`)],
+    [
+
+      Markup.button.callback(
+
+        "🗓 График по датам",
+
+        `pp_edit_schedule_by_date:${ppId}`
+
+      ),
+
+    ],
   ];
 
   if (isSuper) {
@@ -2392,7 +2402,10 @@ const ppMenuKeyboard = (id) =>
       Markup.button.callback("📝 Название", `pp_prompt:title:${id}`),
       Markup.button.callback("📍 Адрес", `pp_prompt:address:${id}`),
     ],
-    [Markup.button.callback("🗓 График на сегодня", `pp_prompt_today_schedule:${id}`)],
+    [Markup.button.callback(
+      "🗓 График по датам",
+      `pp_edit_schedule_by_date:${id}`
+    )],
     [Markup.button.callback("👤 ID менеджеров", `pp_prompt:allowedAdminTelegramIds:${id}`)],
     [Markup.button.callback("🔔 ID канала уведомлений", `pp_prompt:notificationChatId:${id}`)],
     [Markup.button.callback("📊 ID канала статистики", `pp_prompt:statsChatId:${id}`)],
@@ -3036,40 +3049,85 @@ return ctx.reply("Введите новый *адрес* (или `-` чтобы 
 });
 });
 
-bot.action(/pp_edit_today_schedule:(.+)/, async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
-  await ctx.answerCbQuery();
-
-  const pickupPointId = String(ctx.match[1] || "").trim();
-  const allowed = await isPickupPointManager(ctx, pickupPointId);
-  if (!allowed) {
-    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
-  }
-
-  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
-
-  setState(ctx.chat.id, {
-    mode: "pp_prompt_today_schedule",
-    pickupPointId,
-  });
-
-  return ctx.reply(
-    "🗓 *График на сегодня*\n\n" +
-      "Отправь *одним сообщением* один или несколько периодов.\n\n" +
-      "Примеры:\n" +
-      "`10:00-22:00`\n" +
-      "`10:00-14:00, 16:00-22:00`\n\n" +
-      "Если точка сегодня не работает, отправь:\n" +
-      "`выходной`",
-    {
-      parse_mode: "Markdown",
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback("⬅️ К точке", `pp_open:${pickupPointId}`)],
-        [Markup.button.callback("🏠 Меню", "menu")],
-      ]).reply_markup,
+bot.action(
+  /pp_edit_schedule_by_date:(.+)/,
+  async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return ctx.answerCbQuery(
+        "No access"
+      );
     }
-  );
-});
+
+    await ctx.answerCbQuery();
+
+    const pickupPointId = String(
+      ctx.match?.[1] || ""
+    ).trim();
+
+    if (!pickupPointId) {
+      return ctx.reply(
+        "❌ Точка не найдена."
+      );
+    }
+
+    const allowed =
+      await isPickupPointManager(
+        ctx,
+        pickupPointId
+      );
+
+    if (!allowed) {
+      return ctx.answerCbQuery(
+        "Нет доступа",
+        {
+          show_alert: true,
+        }
+      );
+    }
+
+    setState(ctx.chat.id, {
+      mode:
+        "pp_prompt_schedule_by_date",
+
+      step: "date",
+
+      pickupPointId,
+
+      dateKey: "",
+
+      displayDate: "",
+    });
+
+    return ctx.reply(
+      [
+        "🗓 *График по конкретной дате*",
+        "",
+        "Введите дату в формате `ДД.ММ.ГГГГ`.",
+        "",
+        "Пример: `21.07.2026`",
+      ].join("\n"),
+      {
+        parse_mode: "Markdown",
+
+        reply_markup:
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "⬅️ К точке",
+                `pp_open:${pickupPointId}`
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "🏠 Меню",
+                "menu"
+              ),
+            ],
+          ]).reply_markup,
+      }
+    );
+  }
+);
 
 bot.action(/pp_edit_orders_chat:(.+)/, async (ctx) => {
   if (!isSuperAdmin(ctx)) {
@@ -3130,36 +3188,6 @@ bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|
   };
 
   return ctx.reply(prompts[field] || "Введите новое значение", { parse_mode: "Markdown" });
-});
-
-bot.action(/^pp_prompt_today_schedule:(.+)$/, async (ctx) => {
-  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
-  await ctx.answerCbQuery();
-
-  const pickupPointId = String(ctx.match[1] || "").trim();
-  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
-
-  setState(ctx.chat.id, {
-    mode: "pp_prompt_today_schedule",
-    pickupPointId,
-  });
-
-  return ctx.reply(
-    "🗓 *График на сегодня*\n\n" +
-      "Отправь *одним сообщением* один или несколько периодов.\n\n" +
-      "Примеры:\n" +
-      "`10:00-22:00`\n" +
-      "`10:00-14:00, 16:00-22:00`\n\n" +
-      "Если точка сегодня не работает, отправь:\n" +
-      "`выходной`",
-    {
-      parse_mode: "Markdown",
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback("⬅️ К точке", `pp_open:${pickupPointId}`)],
-        [Markup.button.callback("🏠 Меню", "menu")],
-      ]).reply_markup,
-    }
-  );
 });
 
 bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
@@ -6022,154 +6050,345 @@ bot.on("text", async (ctx) => {
       }
     }
 
-    if (st?.mode === "pp_prompt_today_schedule") {
-      const pickupPointId = String(st.pickupPointId || "").trim();
+    if (
+      st?.mode ===
+      "pp_prompt_schedule_by_date"
+    ) {
+      const input = String(
+        ctx.message?.text || ""
+      ).trim();
+
+      const pickupPointId = String(
+        st?.pickupPointId || ""
+      ).trim();
 
       if (!pickupPointId) {
         clearState(ctx.chat.id);
-        return ctx.reply("❌ Точка не найдена.");
+
+        return ctx.reply(
+          "❌ Точка не найдена."
+        );
       }
 
-      const todayKey = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Europe/Warsaw",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date());
+      /*
+      * Шаг 1: ввод даты.
+      */
+      if (st.step === "date") {
+        const match = input.match(
+          /^(\d{2})\.(\d{2})\.(\d{4})$/
+        );
 
-      let scheduleValue = null;
-
-      if (text.toLowerCase() === "выходной") {
-        scheduleValue = {
-          isOpen: false,
-          from: "",
-          to: "",
-          openFrom: "",
-          openTo: "",
-          periods: [],
-          note: "выходной",
-        };
-      } else {
-        const chunks = text
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-        if (!chunks.length) {
+        if (!match) {
           return ctx.reply(
-            "❌ Неверный формат.\n\n" +
-              "Используй:\n" +
-              "`10:00-22:00`\n" +
-              "`10:00-14:00, 16:00-22:00`\n\n" +
-              "или\n\n" +
-              "`выходной`",
-            { parse_mode: "Markdown" }
+            "❌ Неверный формат даты. Используйте `ДД.ММ.ГГГГ`, например `21.07.2026`.",
+            {
+              parse_mode: "Markdown",
+            }
           );
         }
 
-        const periods = [];
+        const day = Number(match[1]);
+        const month = Number(match[2]);
+        const year = Number(match[3]);
 
-        for (const chunk of chunks) {
-          const m = chunk.match(/^([0-2]\d):([0-5]\d)\s*-\s*([0-2]\d):([0-5]\d)$/);
+        const parsedDate = new Date(
+          Date.UTC(
+            year,
+            month - 1,
+            day
+          )
+        );
 
-          if (!m) {
-            return ctx.reply(
-              "❌ Неверный формат.\n\n" +
-                "Используй:\n" +
-                "`10:00-22:00`\n" +
-                "`10:00-14:00, 16:00-22:00`\n\n" +
-                "или\n\n" +
-                "`выходной`",
-              { parse_mode: "Markdown" }
-            );
-          }
+        const isRealDate =
+          parsedDate.getUTCFullYear() ===
+            year &&
+          parsedDate.getUTCMonth() ===
+            month - 1 &&
+          parsedDate.getUTCDate() ===
+            day;
 
-          const from = `${m[1]}:${m[2]}`;
-          const to = `${m[3]}:${m[4]}`;
-
-          const fromMinutes = Number(m[1]) * 60 + Number(m[2]);
-          const toMinutes = Number(m[3]) * 60 + Number(m[4]);
-
-          if (toMinutes <= fromMinutes) {
-            return ctx.reply(
-              `❌ Период \`${chunk}\` неверный: время окончания должно быть позже времени начала.`,
-              { parse_mode: "Markdown" }
-            );
-          }
-
-          periods.push({
-            openFrom: from,
-            openTo: to,
-            from,
-            to,
-          });
+        if (!isRealDate) {
+          return ctx.reply(
+            "❌ Такой даты не существует."
+          );
         }
 
-        periods.sort((a, b) => {
-          const aMinutes = Number(String(a.openFrom).slice(0, 2)) * 60 + Number(String(a.openFrom).slice(3, 5));
-          const bMinutes = Number(String(b.openFrom).slice(0, 2)) * 60 + Number(String(b.openFrom).slice(3, 5));
-          return aMinutes - bMinutes;
-        });
+        st.step = "schedule";
 
-        for (let i = 1; i < periods.length; i++) {
-          const prevTo = Number(String(periods[i - 1].openTo).slice(0, 2)) * 60 + Number(String(periods[i - 1].openTo).slice(3, 5));
-          const currFrom = Number(String(periods[i].openFrom).slice(0, 2)) * 60 + Number(String(periods[i].openFrom).slice(3, 5));
+        st.dateKey = [
+          String(year).padStart(4, "0"),
+          String(month).padStart(2, "0"),
+          String(day).padStart(2, "0"),
+        ].join("-");
 
-          if (currFrom < prevTo) {
-            return ctx.reply(
-              "❌ Периоды пересекаются. Проверь интервалы и попробуй снова.",
-              { parse_mode: "Markdown" }
-            );
+        st.displayDate = input;
+
+        setState(ctx.chat.id, st);
+
+        return ctx.reply(
+          [
+            `🗓 *Дата:* ${input}`,
+            "",
+            "Введите один или несколько интервалов работы.",
+            "",
+            "Примеры:",
+            "`12:00-20:00`",
+            "`11:00-14:00, 15:00-20:00`",
+            "",
+            "Чтобы отметить день закрытым, отправьте:",
+            "`закрыто`",
+          ].join("\n"),
+          {
+            parse_mode: "Markdown",
+
+            reply_markup:
+              Markup.inlineKeyboard([
+                [
+                  Markup.button.callback(
+                    "⬅️ К точке",
+                    `pp_open:${pickupPointId}`
+                  ),
+                ],
+              ]).reply_markup,
           }
-        }
-
-        scheduleValue = {
-          isOpen: true,
-          from: periods[0].openFrom,
-          to: periods[periods.length - 1].openTo,
-          openFrom: periods[0].openFrom,
-          openTo: periods[periods.length - 1].openTo,
-          periods,
-          note: "",
-        };
+        );
       }
 
-      try {
-        await api(`/admin/pickup-points/${pickupPointId}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            scheduleByDatePatch: {
-              [todayKey]: scheduleValue,
-            },
-          }),
-        });
+      /*
+      * Шаг 2: ввод графика.
+      */
+      if (st.step === "schedule") {
+        const normalizedInput =
+          input.toLowerCase();
+
+        const isClosed = [
+          "закрыто",
+          "выходной",
+          "closed",
+          "off",
+        ].includes(normalizedInput);
+
+        let scheduleValue;
+
+        if (isClosed) {
+          scheduleValue = {
+            isOpen: false,
+
+            from: "",
+            to: "",
+
+            openFrom: "",
+            openTo: "",
+
+            periods: [],
+
+            note: "закрыто",
+          };
+        } else {
+          const rawPeriods = input
+            .split(/[,;\n]+/)
+            .map((value) =>
+              value.trim()
+            )
+            .filter(Boolean);
+
+          if (!rawPeriods.length) {
+            return ctx.reply(
+              "❌ Укажите график, например `12:00-20:00`.",
+              {
+                parse_mode:
+                  "Markdown",
+              }
+            );
+          }
+
+          const timePattern =
+            /^([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)$/;
+
+          const periods = [];
+
+          for (
+            const rawPeriod of rawPeriods
+          ) {
+            const match =
+              rawPeriod.match(
+                timePattern
+              );
+
+            if (!match) {
+              return ctx.reply(
+                "❌ Неверный формат. Используйте `HH:MM-HH:MM`, например `12:00-20:00`.",
+                {
+                  parse_mode:
+                    "Markdown",
+                }
+              );
+            }
+
+            const from =
+              `${match[1]}:${match[2]}`;
+
+            const to =
+              `${match[3]}:${match[4]}`;
+
+            const fromMinutes =
+              Number(match[1]) * 60 +
+              Number(match[2]);
+
+            const toMinutes =
+              Number(match[3]) * 60 +
+              Number(match[4]);
+
+            if (
+              toMinutes <= fromMinutes
+            ) {
+              return ctx.reply(
+                `❌ В интервале ${rawPeriod} время окончания должно быть позже начала.`
+              );
+            }
+
+            periods.push({
+              from,
+              to,
+
+              openFrom: from,
+              openTo: to,
+
+              fromMinutes,
+              toMinutes,
+            });
+          }
+
+          periods.sort(
+            (a, b) =>
+              a.fromMinutes -
+              b.fromMinutes
+          );
+
+          for (
+            let index = 1;
+            index < periods.length;
+            index += 1
+          ) {
+            if (
+              periods[index]
+                .fromMinutes <
+              periods[index - 1]
+                .toMinutes
+            ) {
+              return ctx.reply(
+                "❌ Интервалы пересекаются. Исправьте график."
+              );
+            }
+          }
+
+          const cleanPeriods =
+            periods.map(
+              ({
+                from,
+                to,
+                openFrom,
+                openTo,
+              }) => ({
+                from,
+                to,
+                openFrom,
+                openTo,
+              })
+            );
+
+          scheduleValue = {
+            isOpen: true,
+
+            from:
+              cleanPeriods[0].from,
+
+            to:
+              cleanPeriods[
+                cleanPeriods.length - 1
+              ].to,
+
+            openFrom:
+              cleanPeriods[0].from,
+
+            openTo:
+              cleanPeriods[
+                cleanPeriods.length - 1
+              ].to,
+
+            periods: cleanPeriods,
+
+            note: cleanPeriods
+              .map(
+                (period) =>
+                  `${period.from}-${period.to}`
+              )
+              .join(", "),
+          };
+        }
+
+        await api(
+
+          `/admin/pickup-points/${pickupPointId}`,
+
+          {
+
+            method: "PATCH",
+
+            body: JSON.stringify({
+
+              scheduleByDatePatch: {
+
+                [st.dateKey]: scheduleValue,
+
+              },
+
+            }),
+
+          }
+
+        );
+
+        const savedDate =
+          st.displayDate ||
+          st.dateKey;
 
         clearState(ctx.chat.id);
 
-        await ctx.reply(
-          `✅ График на сегодня сохранён:\n\n${todayKey}\n${
+        return ctx.reply(
+          [
+            "✅ *График сохранён*",
+            "",
+            `Дата: *${savedDate}*`,
             scheduleValue.isOpen
-              ? (Array.isArray(scheduleValue.periods) && scheduleValue.periods.length
-                  ? scheduleValue.periods.map((p) => `${p.openFrom}-${p.openTo}`).join(", ")
-                  : `${scheduleValue.from}-${scheduleValue.to}`)
-              : "выходной"
-          }`
+              ? `Время: *${scheduleValue.periods
+                  .map(
+                    (period) =>
+                      `${period.from}-${period.to}`
+                  )
+                  .join(" / ")}*`
+              : "Статус: *закрыто*",
+          ].join("\n"),
+          {
+            parse_mode: "Markdown",
+
+            reply_markup:
+              Markup.inlineKeyboard([
+                [
+                  Markup.button.callback(
+                    "🗓 Изменить другую дату",
+                    `pp_edit_schedule_by_date:${pickupPointId}`
+                  ),
+                ],
+                [
+                  Markup.button.callback(
+                    "⬅️ К точке",
+                    `pp_open:${pickupPointId}`
+                  ),
+                ],
+              ]).reply_markup,
+          }
         );
-
-        const pointData = await api(`/pickup-points?active=0`);
-        const points = Array.isArray(pointData?.pickupPoints) ? pointData.pickupPoints : [];
-        const point = points.find((x) => String(x?._id) === String(pickupPointId));
-
-        if (point) {
-          return ctx.replyWithMarkdown(
-            renderPickupPointPreview(point),
-            ppMenuKeyboard(point._id)
-          );
-        }
-
-        return ctx.reply("Ок.", mainMenu(ctx));
-      } catch (e) {
-        return ctx.reply(`❌ Ошибка: ${e.message}`);
       }
     }
 
