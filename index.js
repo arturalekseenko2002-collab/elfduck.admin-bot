@@ -387,7 +387,9 @@ const managerMainMenu = () =>
 
     ["📦 Наличие", "💰 Кэшбек"],
 
-    ["🎟 Промокоды", "🏪 Самовывоз"],
+    ["🎟 Промокоды", "📣 Рассылка"],
+
+    ["🏪 Самовывоз"],
 
   ])
 
@@ -4962,7 +4964,7 @@ bot.action(/prod_set_category:(.+)/, async (ctx) => {
 bot.action(
   /^broadcast_audience:(all|segment|username)$/,
   async (ctx) => {
-    if (!isSuperAdmin(ctx)) {
+    if (!isAdmin(ctx)) {
       return ctx.answerCbQuery("No access");
     }
 
@@ -5053,7 +5055,7 @@ bot.action(
 );
 
 bot.action("broadcast_start", async (ctx) => {
-  if (!isSuperAdmin(ctx)) {
+  if (!isAdmin(ctx)) {
     return ctx.answerCbQuery("Недостаточно прав");
   }
 
@@ -5383,6 +5385,17 @@ bot.action(/^broadcast_template:(.+)$/, async (ctx) => {
 });
 
 bot.action("broadcast_templates", async (ctx) => {
+
+  if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
+
   await ctx.answerCbQuery();
 
   await loadBroadcastTemplates();
@@ -5440,6 +5453,15 @@ bot.action("broadcast_template_create", async (ctx) => {
 bot.action(
   /^broadcast_template_manage:(.+)$/,
   async (ctx) => {
+        if (!isAdmin(ctx)) {
+
+      return ctx.answerCbQuery(
+
+        "Недостаточно прав"
+
+      );
+
+    }
     await ctx.answerCbQuery();
 
     await loadBroadcastTemplates();
@@ -5452,56 +5474,72 @@ bot.action(
       return ctx.reply("❌ Шаблон не найден.");
     }
 
+    const rows = [
+      [
+        Markup.button.callback(
+          "🚀 Использовать",
+          `broadcast_template_use:${template._id}`
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "✏️ Изменить",
+          `broadcast_edit_template:${template._id}`
+        ),
+      ],
+    ];
+
+    if (isSuperAdmin(ctx)) {
+      rows.push(
+        [
+          Markup.button.callback(
+            template.isDefault
+              ? "⭐ По умолчанию"
+              : "⭐ Сделать по умолчанию",
+            `broadcast_default_template:${template._id}`
+          ),
+        ],
+
+        [
+          Markup.button.callback(
+            "🗑 Удалить",
+            `broadcast_delete_template:${template._id}`
+          ),
+        ]
+      );
+    }
+
+    rows.push([
+      Markup.button.callback(
+        "⬅️ Назад",
+        "broadcast_templates"
+      ),
+    ]);
+
     return ctx.reply(
       `📄 *${template.title}*`,
       {
         parse_mode: "Markdown",
-        ...Markup.inlineKeyboard([
-          [
-            Markup.button.callback(
-              "🚀 Использовать",
-              `broadcast_template_use:${template._id}`
-            ),
-          ],
 
-          [
-            Markup.button.callback(
-              "✏️ Изменить",
-              `broadcast_edit_template:${template._id}`
-            ),
-          ],
-
-          [
-            Markup.button.callback(
-              template.isDefault
-                ? "⭐ По умолчанию"
-                : "⭐ Сделать по умолчанию",
-              `broadcast_default_template:${template._id}`
-            ),
-          ],
-
-          [
-            Markup.button.callback(
-              "🗑 Удалить",
-              `broadcast_delete_template:${template._id}`
-            ),
-          ],
-
-          [
-            Markup.button.callback(
-              "⬅️ Назад",
-              "broadcast_templates"
-            ),
-          ],
-        ]),
+        ...Markup.inlineKeyboard(
+          rows
+        ),
       }
     );
   }
 );
 
 bot.action(/^broadcast_template_use:(.+)$/, async (ctx) => {
-  if (!isSuperAdmin(ctx)) {
-    return ctx.answerCbQuery("Недостаточно прав");
+
+  if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
   }
 
   await ctx.answerCbQuery();
@@ -5536,6 +5574,15 @@ bot.action(/^broadcast_template_use:(.+)$/, async (ctx) => {
 bot.action(
   /^broadcast_default_template:(.+)$/,
   async (ctx) => {
+        if (!isSuperAdmin(ctx)) {
+
+      return ctx.answerCbQuery(
+
+        "Недостаточно прав"
+
+      );
+
+    }
     await ctx.answerCbQuery("Сохраняю...");
 
     try {
@@ -5574,6 +5621,15 @@ bot.action(
 bot.action(
   /^broadcast_delete_template:(.+)$/,
   async (ctx) => {
+        if (!isSuperAdmin(ctx)) {
+
+      return ctx.answerCbQuery(
+
+        "Недостаточно прав"
+
+      );
+
+    }
     await ctx.answerCbQuery();
 
     const template =
@@ -5609,6 +5665,11 @@ bot.action(
 bot.action(
   /^broadcast_delete_template_confirm:(.+)$/,
   async (ctx) => {
+        if (!isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery(
+        "Недостаточно прав"
+      );
+    }
     await ctx.answerCbQuery("Удаляю...");
 
     try {
@@ -5642,6 +5703,12 @@ bot.action(
 );
 
 bot.action("broadcast_template_back", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery(
+      "Недостаточно прав"
+    );
+  }
+
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
@@ -5664,7 +5731,15 @@ bot.action("broadcast_template_back", async (ctx) => {
 });
 
 bot.action("broadcast_template_save", async (ctx) => {
-  await ctx.answerCbQuery("Сохраняю...");
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery(
+      "Недостаточно прав"
+    );
+  }
+
+  await ctx.answerCbQuery(
+    "Сохраняю..."
+  );
 
   const st = getState(ctx.chat.id);
 
@@ -5736,6 +5811,15 @@ bot.action("broadcast_template_save", async (ctx) => {
 bot.action(
   /^broadcast_edit_template:(.+)$/,
   async (ctx) => {
+        if (!isAdmin(ctx)) {
+
+      return ctx.answerCbQuery(
+
+        "Недостаточно прав"
+
+      );
+
+    }
 
     await ctx.answerCbQuery();
 
@@ -5782,7 +5866,7 @@ bot.on("text", async (ctx) => {
   const broadcastState = getState(ctx.chat.id);
 
   if (broadcastState?.mode === "broadcast") {
-    if (!isSuperAdmin(ctx)) {
+    if (!isAdmin(ctx)) {
       clearState(ctx.chat.id);
       return ctx.reply("Недостаточно прав.");
     }
