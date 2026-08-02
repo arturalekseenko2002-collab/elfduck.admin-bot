@@ -5491,24 +5491,22 @@ bot.action(
     ];
 
     if (isSuperAdmin(ctx)) {
-      rows.push(
-        [
-          Markup.button.callback(
-            template.isDefault
-              ? "⭐ По умолчанию"
-              : "⭐ Сделать по умолчанию",
-            `broadcast_default_template:${template._id}`
-          ),
-        ],
-
-        [
-          Markup.button.callback(
-            "🗑 Удалить",
-            `broadcast_delete_template:${template._id}`
-          ),
-        ]
-      );
+      rows.push([
+        Markup.button.callback(
+          template.isDefault
+            ? "⭐ По умолчанию"
+            : "⭐ Сделать по умолчанию",
+          `broadcast_default_template:${template._id}`
+        ),
+      ]);
     }
+
+    rows.push([
+      Markup.button.callback(
+        "🗑 Удалить",
+        `broadcast_delete_template:${template._id}`
+      ),
+    ]);
 
     rows.push([
       Markup.button.callback(
@@ -5621,15 +5619,15 @@ bot.action(
 bot.action(
   /^broadcast_delete_template:(.+)$/,
   async (ctx) => {
-        if (!isSuperAdmin(ctx)) {
+if (!isAdmin(ctx)) {
 
-      return ctx.answerCbQuery(
+  return ctx.answerCbQuery(
 
-        "Недостаточно прав"
+    "Недостаточно прав"
 
-      );
+  );
 
-    }
+}
     await ctx.answerCbQuery();
 
     const template =
@@ -5665,7 +5663,7 @@ bot.action(
 bot.action(
   /^broadcast_delete_template_confirm:(.+)$/,
   async (ctx) => {
-        if (!isSuperAdmin(ctx)) {
+    if (!isAdmin(ctx)) {
       return ctx.answerCbQuery(
         "Недостаточно прав"
       );
