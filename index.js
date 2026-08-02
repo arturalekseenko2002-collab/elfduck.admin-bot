@@ -5003,7 +5003,7 @@ bot.action(
 bot.action(
   /^broadcast_segment_type:(category|pickupPoint|deliveryMethod)$/,
   async (ctx) => {
-    if (!isSuperAdmin(ctx)) {
+    if (!isAdmin(ctx)) {
       return ctx.answerCbQuery("No access");
     }
 
@@ -5030,7 +5030,7 @@ bot.action(
 bot.action(
   /^broadcast_segment_value:(.+)$/,
   async (ctx) => {
-    if (!isSuperAdmin(ctx)) {
+    if (!isAdmin(ctx)) {
       return ctx.answerCbQuery("No access");
     }
 
@@ -5087,6 +5087,18 @@ bot.action("broadcast_start", async (ctx) => {
 });
 
 bot.action("broadcast_new", async (ctx) => {
+
+  if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
+
+  await ctx.answerCbQuery();
   await ctx.answerCbQuery();
 
   setState(ctx.chat.id, {
@@ -5099,12 +5111,30 @@ bot.action("broadcast_new", async (ctx) => {
 });
 
 bot.action("broadcast_cancel", async (ctx) => {
+    if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
   await ctx.answerCbQuery();
   clearState(ctx.chat.id);
   return ctx.reply("Рассылка отменена.", mainMenu(ctx));
 });
 
 bot.action("broadcast_back", async (ctx) => {
+    if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
   await ctx.answerCbQuery();
 
   const st = getState(ctx.chat.id);
@@ -5161,7 +5191,7 @@ const runBroadcastFromState = async (ctx, options = {}) => {
 };
 
 bot.action("broadcast_test", async (ctx) => {
-  if (!isSuperAdmin(ctx)) {
+  if (!isAdmin(ctx)) {
     return ctx.answerCbQuery("Недостаточно прав");
   }
 
@@ -5200,7 +5230,7 @@ bot.action("broadcast_test", async (ctx) => {
 });
 
 bot.action("broadcast_confirm", async (ctx) => {
-  if (!isSuperAdmin(ctx)) {
+    if (!isAdmin(ctx)) {
     return ctx.answerCbQuery("Недостаточно прав");
   }
 
@@ -5572,7 +5602,7 @@ bot.action(/^broadcast_template_use:(.+)$/, async (ctx) => {
 bot.action(
   /^broadcast_default_template:(.+)$/,
   async (ctx) => {
-        if (!isSuperAdmin(ctx)) {
+        if (!isAdmin(ctx)) {
 
       return ctx.answerCbQuery(
 
